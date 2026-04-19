@@ -1,0 +1,9 @@
+from hris_bpe.domains.auth import models as auth_models  # noqa: F401
+from hris_bpe.domains.access_control import models as access_control_models  # noqa: F401
+from hris_bpe.domains.attendance import models as attendance_models  # noqa: F401
+from hris_bpe.domains.client_contract import models as client_contract_models  # noqa: F401
+from hris_bpe.domains.master_hr import models as master_hr_models  # noqa: F401
+from hris_bpe.domains.organization import models as organization_models  # noqa: F401
+from hris_bpe.domains.product_control import models as product_control_models  # noqa: F401
+from hris_bpe.domains.site_operations import models as site_operations_models  # noqa: F401
+from hris_bpe.domains.workforce_operations import models as workforce_operations_models  # noqa: F401

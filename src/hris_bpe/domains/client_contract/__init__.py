@@ -1,0 +1,2 @@
+"""Client contract domain."""
+

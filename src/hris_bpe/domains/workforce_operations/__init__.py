@@ -1,0 +1,2 @@
+"""Workforce operations domain."""
+

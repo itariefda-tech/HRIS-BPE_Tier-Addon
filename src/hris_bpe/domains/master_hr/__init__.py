@@ -1,0 +1,2 @@
+"""Master HR domain."""
+
