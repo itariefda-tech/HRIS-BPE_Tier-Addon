@@ -133,11 +133,11 @@
 - [x] siapkan endpoint create `employee_contracts`
 - [x] pindahkan konsep `employee` terpisah dari user account
 - [x] siapkan relasi `users.employee_id`
-- [ ] tambah validasi kode unik per company yang lebih ketat
-- [ ] tambah support multi-company owner
-- [ ] migrasikan emergency contact dan employee documents
-- [ ] tambahkan import batch employee
-- [ ] tambahkan lifecycle employee yang lebih lengkap
+- [x] tambah validasi kode unik per company yang lebih ketat
+- [x] tambah support multi-company owner
+- [x] migrasikan emergency contact dan employee documents
+- [x] tambahkan import batch employee
+- [x] tambahkan lifecycle employee yang lebih lengkap
 
 ---
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hris_bpe.domains.organization.models import Branch, Company, Department, Position
@@ -22,6 +22,33 @@ class OrganizationRepository:
     def list_positions(self) -> list[Position]:
         return list(self.db.execute(select(Position).order_by(Position.code)).scalars())
 
+    def get_company_by_code(self, code: str) -> Company | None:
+        statement = select(Company).where(func.lower(Company.code) == code.lower())
+        return self.db.execute(statement).scalar_one_or_none()
+
+    def get_branch_by_company_and_code(self, company_id: int, code: str) -> Branch | None:
+        statement = select(Branch).where(
+            Branch.company_id == company_id,
+            func.lower(Branch.code) == code.lower(),
+        )
+        return self.db.execute(statement).scalar_one_or_none()
+
+    def get_department_by_company_and_code(
+        self, company_id: int, code: str
+    ) -> Department | None:
+        statement = select(Department).where(
+            Department.company_id == company_id,
+            func.lower(Department.code) == code.lower(),
+        )
+        return self.db.execute(statement).scalar_one_or_none()
+
+    def get_position_by_company_and_code(self, company_id: int, code: str) -> Position | None:
+        statement = select(Position).where(
+            Position.company_id == company_id,
+            func.lower(Position.code) == code.lower(),
+        )
+        return self.db.execute(statement).scalar_one_or_none()
+
     def create_company(self, item: Company) -> Company:
         self.db.add(item)
         self.db.flush()
@@ -41,4 +68,3 @@ class OrganizationRepository:
         self.db.add(item)
         self.db.flush()
         return item
-

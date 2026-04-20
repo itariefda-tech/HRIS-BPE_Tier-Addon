@@ -144,12 +144,57 @@ def _apply_phase3_auth_access_control(connection: Connection) -> None:
     Base.metadata.tables["access_control_audit_logs"].create(connection, checkfirst=True)
 
 
+def _index_exists(
+    connection: Connection,
+    table_name: str,
+    *,
+    index_name: str | None = None,
+    column_names: list[str] | None = None,
+    unique: bool | None = None,
+) -> bool:
+    for index in inspect(connection).get_indexes(table_name):
+        if index_name is not None and index["name"] != index_name:
+            continue
+        if column_names is not None and index["column_names"] != column_names:
+            continue
+        if unique is not None and bool(index.get("unique")) != unique:
+            continue
+        return True
+    return False
+
+
+def _drop_index_if_exists(connection: Connection, index_name: str) -> None:
+    if not _index_exists(connection, "employees", index_name=index_name):
+        return
+    connection.execute(text(f"DROP INDEX IF EXISTS {index_name}"))
+
+
+def _apply_phase4_company_unique_hardening(connection: Connection) -> None:
+    _drop_index_if_exists(connection, "ix_employees_employee_number")
+    if not _index_exists(
+        connection,
+        "employees",
+        index_name="ux_employees_company_employee_number",
+        column_names=["company_id", "employee_number"],
+        unique=True,
+    ):
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "ux_employees_company_employee_number "
+                "ON employees (company_id, employee_number)"
+            )
+        )
+
+
 MIGRATIONS = [
     MigrationStep("0001_base_schema", _noop),
     MigrationStep("0002_phase1_foundation", _noop),
     MigrationStep("0003_phase15_completion", _noop),
     MigrationStep("0004_phase2_database_hardening", _apply_phase2_database_hardening),
     MigrationStep("0005_phase3_auth_access_control", _apply_phase3_auth_access_control),
+    MigrationStep("0006_phase4_company_unique_hardening", _apply_phase4_company_unique_hardening),
+    MigrationStep("0007_phase4_master_hr_lifecycle", _noop),
 ]
 
 

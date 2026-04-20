@@ -31,12 +31,16 @@ def test_phase2_migration_adds_audit_columns_indexes_and_revision_history():
 
     work_schedule_columns = {column["name"] for column in inspector.get_columns("work_schedules")}
     employee_columns = {column["name"] for column in inspector.get_columns("employees")}
+    lifecycle_columns = {
+        column["name"] for column in inspector.get_columns("employee_lifecycle_events")
+    }
     subscription_columns = {
         column["name"] for column in inspector.get_columns("company_subscriptions")
     }
 
     assert {"created_by", "updated_by", "version_no"} <= work_schedule_columns
     assert {"created_by", "updated_by", "version_no"} <= employee_columns
+    assert {"created_by", "updated_by", "version_no"} <= lifecycle_columns
     assert {"created_by", "updated_by", "version_no"} <= subscription_columns
 
     work_schedule_indexes = {
@@ -45,10 +49,25 @@ def test_phase2_migration_adds_audit_columns_indexes_and_revision_history():
     attendance_indexes = {
         index["name"] for index in inspector.get_indexes("attendance_records")
     }
+    employee_indexes = {
+        index["name"]: index for index in inspector.get_indexes("employees")
+    }
+    lifecycle_indexes = {
+        index["name"] for index in inspector.get_indexes("employee_lifecycle_events")
+    }
 
     assert "ix_work_schedules_site_date_status" in work_schedule_indexes
     assert "ix_work_schedules_deployment_date" in work_schedule_indexes
     assert "ix_attendance_records_site_date_status" in attendance_indexes
+    assert "ux_employees_company_employee_number" in employee_indexes
+    assert employee_indexes["ux_employees_company_employee_number"]["unique"] == 1
+    assert employee_indexes["ux_employees_company_employee_number"]["column_names"] == [
+        "company_id",
+        "employee_number",
+    ]
+    assert "ix_employees_employee_number" not in employee_indexes
+    assert "ix_employee_lifecycle_events_employee_effective_date" in lifecycle_indexes
+    assert "ix_employee_lifecycle_events_action_type" in lifecycle_indexes
 
     with engine.begin() as connection:
         revisions = set(connection.execute(select(schema_migrations.c.revision)).scalars())
@@ -58,6 +77,9 @@ def test_phase2_migration_adds_audit_columns_indexes_and_revision_history():
         "0002_phase1_foundation",
         "0003_phase15_completion",
         "0004_phase2_database_hardening",
+        "0005_phase3_auth_access_control",
+        "0006_phase4_company_unique_hardening",
+        "0007_phase4_master_hr_lifecycle",
     }
     assert expected_revisions.issubset(revisions)
 

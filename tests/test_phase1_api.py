@@ -396,6 +396,302 @@ def test_branch_scoped_hr_only_sees_employees_inside_branch_scope():
         assert "EMP-0002" not in employee_numbers
 
 
+def test_company_unique_code_validation_is_case_insensitive_and_scoped_per_company():
+    with _bootstrap_app() as client:
+        owner_token, _ = _login(client, "owner@bpe.co.id", "Admin123!")
+        owner_headers = {"Authorization": f"Bearer {owner_token}"}
+
+        companies = client.get("/api/v1/organization/companies", headers=owner_headers)
+        branches = client.get("/api/v1/organization/branches", headers=owner_headers)
+        assert companies.status_code == 200
+        assert branches.status_code == 200
+
+        company_by_code = {item["code"]: item for item in companies.json()["data"]}
+        branch_by_company = {item["company_id"]: item for item in branches.json()["data"]}
+        primary_company = company_by_code["BPE-HQ"]
+        secondary_company = company_by_code["BPE-SBY"]
+        primary_branch = branch_by_company[primary_company["id"]]
+        secondary_branch = branch_by_company[secondary_company["id"]]
+
+        duplicate_branch = client.post(
+            "/api/v1/organization/branches",
+            headers=owner_headers,
+            json={
+                "company_id": primary_company["id"],
+                "code": " hq ",
+                "name": "Duplicate Head Office",
+                "city": "Jakarta",
+                "province": "DKI Jakarta",
+            },
+        )
+        assert duplicate_branch.status_code == 409
+
+        cross_company_branch = client.post(
+            "/api/v1/organization/branches",
+            headers=owner_headers,
+            json={
+                "company_id": secondary_company["id"],
+                "code": " hq ",
+                "name": "Surabaya HQ",
+                "city": "Surabaya",
+                "province": "Jawa Timur",
+            },
+        )
+        assert cross_company_branch.status_code == 200
+        assert cross_company_branch.json()["data"]["code"] == "HQ"
+
+        duplicate_employee = client.post(
+            "/api/v1/master-hr/employees",
+            headers=owner_headers,
+            json={
+                "company_id": primary_company["id"],
+                "branch_id": primary_branch["id"],
+                "employee_number": " emp-0001 ",
+                "full_name": "Duplicate Demo Guard",
+                "employment_status": "contract",
+            },
+        )
+        assert duplicate_employee.status_code == 409
+
+        cross_company_employee = client.post(
+            "/api/v1/master-hr/employees",
+            headers=owner_headers,
+            json={
+                "company_id": secondary_company["id"],
+                "branch_id": secondary_branch["id"],
+                "employee_number": " emp-0001 ",
+                "full_name": "Surabaya Guard 01",
+                "employment_status": "contract",
+                "employee_status": "ACTIVE",
+            },
+        )
+        assert cross_company_employee.status_code == 200
+        assert cross_company_employee.json()["data"]["employee_number"] == "EMP-0001"
+        assert cross_company_employee.json()["data"]["company_id"] == secondary_company["id"]
+
+
+def test_batch_import_employee_returns_per_row_result_and_continues_on_error():
+    with _bootstrap_app() as client:
+        owner_token, _ = _login(client, "owner@bpe.co.id", "Admin123!")
+        owner_headers = {"Authorization": f"Bearer {owner_token}"}
+
+        companies = client.get("/api/v1/organization/companies", headers=owner_headers)
+        branches = client.get("/api/v1/organization/branches", headers=owner_headers)
+        assert companies.status_code == 200
+        assert branches.status_code == 200
+
+        company_by_code = {item["code"]: item for item in companies.json()["data"]}
+        branch_by_company = {item["company_id"]: item for item in branches.json()["data"]}
+        primary_company = company_by_code["BPE-HQ"]
+        secondary_company = company_by_code["BPE-SBY"]
+
+        imported = client.post(
+            "/api/v1/master-hr/employees/imports/batch",
+            headers=owner_headers,
+            json={
+                "employees": [
+                    {
+                        "company_id": primary_company["id"],
+                        "branch_id": branch_by_company[primary_company["id"]]["id"],
+                        "employee_number": " emp-0200 ",
+                        "full_name": "Batch Guard HQ",
+                        "employment_status": "contract",
+                    },
+                    {
+                        "company_id": primary_company["id"],
+                        "branch_id": branch_by_company[primary_company["id"]]["id"],
+                        "employee_number": " emp-0001 ",
+                        "full_name": "Duplicate Guard HQ",
+                        "employment_status": "contract",
+                    },
+                    {
+                        "company_id": secondary_company["id"],
+                        "branch_id": branch_by_company[secondary_company["id"]]["id"],
+                        "employee_number": " emp-0200 ",
+                        "full_name": "Batch Guard SBY",
+                        "employment_status": "contract",
+                    },
+                ]
+            },
+        )
+        assert imported.status_code == 200
+        assert imported.json()["meta"]["requested_total"] == 3
+        assert imported.json()["meta"]["created"] == 2
+        assert imported.json()["meta"]["failed"] == 1
+        assert imported.json()["meta"]["stopped_early"] is False
+
+        row_statuses = [item["status"] for item in imported.json()["data"]]
+        assert row_statuses == ["CREATED", "FAILED", "CREATED"]
+        assert imported.json()["data"][0]["employee"]["employee_number"] == "EMP-0200"
+        assert imported.json()["data"][1]["message"] == "Employee number sudah digunakan pada company ini."
+        assert imported.json()["data"][2]["employee"]["company_id"] == secondary_company["id"]
+
+        employees = client.get("/api/v1/master-hr/employees", headers=owner_headers)
+        assert employees.status_code == 200
+        imported_employee_keys = {
+            (item["company_id"], item["employee_number"]) for item in employees.json()["data"]
+        }
+        assert (primary_company["id"], "EMP-0200") in imported_employee_keys
+        assert (secondary_company["id"], "EMP-0200") in imported_employee_keys
+
+
+def test_employee_lifecycle_events_update_employee_state_and_keep_history():
+    with _bootstrap_app() as client:
+        owner_token, _ = _login(client, "owner@bpe.co.id", "Admin123!")
+        owner_headers = {"Authorization": f"Bearer {owner_token}"}
+
+        employees = client.get("/api/v1/master-hr/employees", headers=owner_headers)
+        branches = client.get("/api/v1/organization/branches", headers=owner_headers)
+        assert employees.status_code == 200
+        assert branches.status_code == 200
+
+        employee_by_number = {
+            item["employee_number"]: item for item in employees.json()["data"]
+        }
+        branch_by_code = {item["code"]: item for item in branches.json()["data"]}
+        target_employee = employee_by_number["EMP-0002"]
+        target_branch = branch_by_code["HQ"]
+
+        transfer = client.post(
+            f"/api/v1/master-hr/employees/{target_employee['id']}/lifecycle-events",
+            headers=owner_headers,
+            json={
+                "action_type": "transfer",
+                "effective_date": date.today().isoformat(),
+                "new_branch_id": target_branch["id"],
+                "remarks": "Mutasi ke head office",
+            },
+        )
+        assert transfer.status_code == 200
+        assert transfer.json()["data"]["event"]["action_type"] == "TRANSFER"
+        assert transfer.json()["data"]["event"]["old_branch_id"] == target_employee["branch_id"]
+        assert transfer.json()["data"]["employee"]["branch_id"] == target_branch["id"]
+        assert transfer.json()["data"]["employee"]["employee_status"] == "ACTIVE"
+
+        resign = client.post(
+            f"/api/v1/master-hr/employees/{target_employee['id']}/lifecycle-events",
+            headers=owner_headers,
+            json={
+                "action_type": "RESIGN",
+                "effective_date": (date.today() + timedelta(days=1)).isoformat(),
+                "remarks": "Pengunduran diri demo",
+            },
+        )
+        assert resign.status_code == 200
+        assert resign.json()["data"]["employee"]["employee_status"] == "RESIGNED"
+        assert resign.json()["data"]["employee"]["resign_date"] == (
+            date.today() + timedelta(days=1)
+        ).isoformat()
+
+        reactivate = client.post(
+            f"/api/v1/master-hr/employees/{target_employee['id']}/lifecycle-events",
+            headers=owner_headers,
+            json={
+                "action_type": "REACTIVATE",
+                "effective_date": (date.today() + timedelta(days=2)).isoformat(),
+                "new_employment_status": "PERMANENT",
+                "remarks": "Aktivasi ulang demo",
+            },
+        )
+        assert reactivate.status_code == 200
+        assert reactivate.json()["data"]["employee"]["employee_status"] == "ACTIVE"
+        assert reactivate.json()["data"]["employee"]["employment_status"] == "PERMANENT"
+        assert reactivate.json()["data"]["employee"]["resign_date"] is None
+
+        lifecycle_events = client.get(
+            f"/api/v1/master-hr/employees/{target_employee['id']}/lifecycle-events",
+            headers=owner_headers,
+        )
+        assert lifecycle_events.status_code == 200
+        assert lifecycle_events.json()["meta"]["total"] == 3
+        action_types = [item["action_type"] for item in lifecycle_events.json()["data"]]
+        assert action_types == ["REACTIVATE", "RESIGN", "TRANSFER"]
+
+
+def test_employee_emergency_contacts_and_documents_follow_employee_scope():
+    with _bootstrap_app() as client:
+        owner_token, _ = _login(client, "owner@bpe.co.id", "Admin123!")
+        hr_token, _ = _login(client, "hr.branch@bpe.co.id", "HrBranch123!")
+        owner_headers = {"Authorization": f"Bearer {owner_token}"}
+        hr_headers = {"Authorization": f"Bearer {hr_token}"}
+
+        employees = client.get("/api/v1/master-hr/employees", headers=owner_headers)
+        assert employees.status_code == 200
+        employee_by_number = {
+            item["employee_number"]: item for item in employees.json()["data"]
+        }
+        in_scope_employee = employee_by_number["EMP-0001"]
+        out_of_scope_employee = employee_by_number["EMP-0002"]
+
+        created_contact = client.post(
+            f"/api/v1/master-hr/employees/{in_scope_employee['id']}/emergency-contacts",
+            headers=hr_headers,
+            json={
+                "contact_name": "Ibu Guard",
+                "relationship_type": "PARENT",
+                "phone": "081299999999",
+                "alternate_phone": "081288888888",
+                "email": "ibu.guard@bpe.co.id",
+                "address": "Bekasi",
+                "is_primary": True,
+                "notes": "Kontak utama darurat",
+            },
+        )
+        assert created_contact.status_code == 200
+        assert created_contact.json()["data"]["employee_id"] == in_scope_employee["id"]
+        assert created_contact.json()["data"]["is_primary"] is True
+
+        listed_contacts = client.get(
+            f"/api/v1/master-hr/employees/{in_scope_employee['id']}/emergency-contacts",
+            headers=hr_headers,
+        )
+        assert listed_contacts.status_code == 200
+        assert listed_contacts.json()["meta"]["total"] == 1
+        assert listed_contacts.json()["data"][0]["contact_name"] == "Ibu Guard"
+
+        created_document = client.post(
+            f"/api/v1/master-hr/employees/{in_scope_employee['id']}/documents",
+            headers=hr_headers,
+            json={
+                "document_type": "ID_CARD",
+                "document_name": "KTP Demo Guard",
+                "file_path": "employee-documents/emp-0001/ktp.jpg",
+                "document_number": "3171000000000001",
+                "issued_date": date.today().isoformat(),
+                "active_flag": True,
+                "notes": "Dokumen onboarding",
+            },
+        )
+        assert created_document.status_code == 200
+        assert created_document.json()["data"]["employee_id"] == in_scope_employee["id"]
+        assert created_document.json()["data"]["document_type"] == "ID_CARD"
+
+        listed_documents = client.get(
+            f"/api/v1/master-hr/employees/{in_scope_employee['id']}/documents",
+            headers=hr_headers,
+        )
+        assert listed_documents.status_code == 200
+        assert listed_documents.json()["meta"]["total"] == 1
+        assert listed_documents.json()["data"][0]["document_name"] == "KTP Demo Guard"
+
+        denied_contact = client.get(
+            f"/api/v1/master-hr/employees/{out_of_scope_employee['id']}/emergency-contacts",
+            headers=hr_headers,
+        )
+        assert denied_contact.status_code == 403
+
+        denied_document = client.post(
+            f"/api/v1/master-hr/employees/{out_of_scope_employee['id']}/documents",
+            headers=hr_headers,
+            json={
+                "document_type": "CERTIFICATE",
+                "document_name": "Out of Scope",
+                "file_path": "employee-documents/emp-0002/cert.pdf",
+            },
+        )
+        assert denied_document.status_code == 403
+
+
 def test_refresh_and_logout_revoke_current_auth_session():
     with _bootstrap_app() as client:
         login_payload = _login_payload(client, "owner@bpe.co.id", "Admin123!")

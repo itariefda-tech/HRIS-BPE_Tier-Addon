@@ -44,12 +44,21 @@ class OrganizationService:
             lambda item: item.company_id,
         )
 
+    @staticmethod
+    def _raise_duplicate_code(detail: str) -> None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=detail,
+        )
+
     def create_company(self, current_user: CurrentUserContext, payload: CompanyCreateRequest):
         if current_user.has_explicit_scope:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User dengan explicit scope tidak diizinkan membuat company baru.",
             )
+        if self.repository.get_company_by_code(payload.code) is not None:
+            self._raise_duplicate_code("Code company sudah digunakan.")
         item = Company(
             **payload.model_dump(),
             created_by=current_user.user.id,
@@ -62,6 +71,8 @@ class OrganizationService:
 
     def create_branch(self, current_user: CurrentUserContext, payload: BranchCreateRequest):
         ensure_company_access(current_user, payload.company_id, detail="Branch tidak berada dalam scope company user.")
+        if self.repository.get_branch_by_company_and_code(payload.company_id, payload.code) is not None:
+            self._raise_duplicate_code("Code branch sudah digunakan pada company ini.")
         item = Branch(
             **payload.model_dump(),
             created_by=current_user.user.id,
@@ -78,6 +89,11 @@ class OrganizationService:
             payload.company_id,
             detail="Department tidak berada dalam scope company user.",
         )
+        if (
+            self.repository.get_department_by_company_and_code(payload.company_id, payload.code)
+            is not None
+        ):
+            self._raise_duplicate_code("Code department sudah digunakan pada company ini.")
         item = Department(
             **payload.model_dump(),
             created_by=current_user.user.id,
@@ -94,6 +110,8 @@ class OrganizationService:
             payload.company_id,
             detail="Position tidak berada dalam scope company user.",
         )
+        if self.repository.get_position_by_company_and_code(payload.company_id, payload.code) is not None:
+            self._raise_duplicate_code("Code position sudah digunakan pada company ini.")
         item = Position(
             **payload.model_dump(),
             created_by=current_user.user.id,

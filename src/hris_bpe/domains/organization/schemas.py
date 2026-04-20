@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class CompanyCreateRequest(BaseModel):
@@ -14,6 +14,11 @@ class CompanyCreateRequest(BaseModel):
     phone: str | None = None
     email: EmailStr | None = None
     status: str = "ACTIVE"
+
+    @field_validator("code")
+    @classmethod
+    def normalize_code(cls, value: str) -> str:
+        return value.strip().upper()
 
 
 class CompanyRead(BaseModel):
@@ -42,6 +47,11 @@ class BranchCreateRequest(BaseModel):
     phone: str | None = None
     status: str = "ACTIVE"
 
+    @field_validator("code")
+    @classmethod
+    def normalize_code(cls, value: str) -> str:
+        return value.strip().upper()
+
 
 class BranchRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -65,6 +75,11 @@ class DepartmentCreateRequest(BaseModel):
     name: str
     description: str | None = None
 
+    @field_validator("code")
+    @classmethod
+    def normalize_code(cls, value: str) -> str:
+        return value.strip().upper()
+
 
 class DepartmentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -86,6 +101,11 @@ class PositionCreateRequest(BaseModel):
     level_order: int = 0
     description: str | None = None
 
+    @field_validator("code")
+    @classmethod
+    def normalize_code(cls, value: str) -> str:
+        return value.strip().upper()
+
 
 class PositionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -99,4 +119,3 @@ class PositionRead(BaseModel):
     description: str | None
     created_at: datetime
     updated_at: datetime
-
