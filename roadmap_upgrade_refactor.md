@@ -283,15 +283,15 @@ Fokus:
 ## 🧩 SCOPE UI YANG WAJIB ADA
 
 ### 1. AUTH & BASE LAYOUT
-- [ ] halaman login (web admin)
-- [ ] simpan token & session
-- [ ] proteksi route (auth guard)
-- [ ] layout sidebar + header basic
-- [ ] tampilkan user profile sederhana
+- [x] halaman login (web admin)
+- [x] simpan token & session
+- [x] proteksi route (auth guard)
+- [x] layout sidebar + header basic
+- [x] tampilkan user profile sederhana
 
 ## 🌐 CATATAN UI FOUNDATION
-- [ ] siapkan struktur i18n dasar agar UI Basic tidak hardcode text (`id` / `en`)
-- [ ] siapkan theme token dasar agar warna/layout tidak hardcode (`theme_1` / `theme_2` / `theme_3` / `theme_4` / `theme_5`)
+- [x] siapkan struktur i18n dasar agar UI Basic tidak hardcode text (`id` / `en`)
+- [x] siapkan theme token dasar agar warna/layout tidak hardcode (`theme_1` / `theme_2` / `theme_3` / `theme_4` / `theme_5`)
 - [ ] belum wajib aktif 2 bahasa penuh pada phase ini
 - [ ] belum wajib aktif 5 tema penuh pada phase ini
 - [ ] target phase ini hanya menyiapkan pondasi agar tidak refactor besar saat masuk UI/UX phase berikutnya
@@ -299,12 +299,12 @@ Fokus:
 ---
 
 ### 2. DASHBOARD BASIC (WAJIB ADA)
-- [ ] total employee
-- [ ] total client
-- [ ] total site
-- [ ] active deployment
-- [ ] attendance hari ini
-- [ ] present / late / absent
+- [x] total employee
+- [x] total client
+- [x] total site
+- [x] active deployment
+- [x] attendance hari ini
+- [x] present / late / absent
 
 Endpoint:
 - `/api/v1/dashboard/ops-summary`
@@ -312,58 +312,62 @@ Endpoint:
 ---
 
 ### 3. EMPLOYEE MANAGEMENT UI
-- [ ] halaman list employee
-- [ ] create employee
-- [ ] edit employee
-- [ ] detail employee
-- [ ] filter by branch / status / position
+- [x] halaman list employee
+- [x] create employee
+- [x] edit employee
+- [x] detail employee
+- [x] filter by branch / status / position
 
 ---
 
 ### 4. CLIENT, SITE & POST UI
-- [ ] list client
-- [ ] create/edit client
-- [ ] list contract
-- [ ] list site
-- [ ] create/edit site
-- [ ] site posts management
+- [x] list client
+- [x] create/edit client
+- [x] list contract
+- [x] list site
+- [x] create/edit site
+- [x] site posts management
 
 ---
 
 ### 5. DEPLOYMENT UI (KRITIS)
-- [ ] list deployment
-- [ ] assign guard ke site
-- [ ] end deployment
-- [ ] filter by site/client/status
+- [x] list deployment
+- [x] assign guard ke site
+- [x] end deployment
+- [x] filter by site/client/status
 
 ---
 
 ### 6. SCHEDULE UI (KRITIS)
-- [ ] list schedule (table)
-- [ ] generate schedule
-- [ ] publish schedule
-- [ ] filter by site/post/date
+- [x] list schedule (table)
+- [x] generate schedule
+- [x] publish schedule
+- [x] filter by site/post/date
 - [ ] optional: calendar sederhana
 
 ---
 
 ### 7. ATTENDANCE MONITORING UI
-- [ ] list attendance
-- [ ] filter by date/site/status
-- [ ] detail attendance
+- [x] list attendance
+- [x] filter by date/site/status
+- [x] detail attendance
 - [ ] tandai late / absent
-- [ ] tampilkan GPS flag sederhana
+- [x] tampilkan GPS flag sederhana
 
 ---
 
 ## 📱 MOBILE GUARD (MINIMAL VIABLE UI)
 
 ### WAJIB ADA:
-- [ ] login
-- [ ] lihat jadwal (my schedules)
-- [ ] check-in
-- [ ] check-out
-- [ ] status hadir hari ini
+- [x] login
+- [x] lihat jadwal (my schedules)
+- [x] check-in
+- [x] check-out
+- [x] status hadir hari ini
+
+### VALIDASI SAAT INI:
+- [x] kontrak backend `login`, `my schedules`, `check-in`, `check-out`, dan perubahan dashboard hari yang sama tervalidasi via integration test
+- [ ] runtime emulator/device tervalidasi langsung
 
 Endpoint:
 - `/my/schedules`
@@ -396,6 +400,9 @@ Endpoint:
 - [ ] test schedule muncul di mobile
 - [ ] test check-in masuk ke dashboard
 - [ ] test data konsisten
+
+Catatan:
+- runtime mobile guard belum bisa dicentang pada environment ini karena Flutter SDK, `dart`, `adb`, dan emulator runner belum tersedia siap pakai
 
 ---
 

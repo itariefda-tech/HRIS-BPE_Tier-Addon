@@ -25,8 +25,10 @@ from hris_bpe.domains.workforce_operations.schemas import (
     EndDeploymentRequest,
     EmployeeDeploymentCreateRequest,
     EmployeeDeploymentUpdateRequest,
+    MyWorkScheduleRead,
     ShiftTypeCreateRequest,
     WorkScheduleCreateRequest,
+    WorkScheduleRead,
     WorkScheduleUpdateRequest,
 )
 
@@ -368,6 +370,18 @@ class WorkforceOperationsService:
             if item.employee_id == current_user.user.employee_id
             and item.schedule_status in {"PUBLISHED", "APPROVED"}
         ]
+
+    def build_my_schedule_read(self, schedule: WorkSchedule) -> MyWorkScheduleRead:
+        site = self.db.get(ClientSite, schedule.client_site_id)
+        post = self.db.get(SitePost, schedule.site_post_id) if schedule.site_post_id else None
+        shift_type = self.db.get(ShiftType, schedule.shift_type_id)
+        payload = WorkScheduleRead.model_validate(schedule).model_dump(mode="json")
+        return MyWorkScheduleRead(
+            **payload,
+            client_site_name=site.name if site is not None else None,
+            site_post_name=post.name if post is not None else None,
+            shift_type_name=shift_type.name if shift_type is not None else None,
+        )
 
     def create_work_schedule(
         self,

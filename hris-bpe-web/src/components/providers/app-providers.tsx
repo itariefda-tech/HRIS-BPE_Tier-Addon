@@ -7,6 +7,25 @@ import { useAuthStore } from "@/store/auth-store";
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const hydrated = useAuthStore((state) => state.hydrated);
   const session = useAuthStore((state) => state.session);
+  const setHydrated = useAuthStore((state) => state.setHydrated);
+
+  useEffect(() => {
+    setHydrated(useAuthStore.persist.hasHydrated());
+
+    const unsubscribeHydrate = useAuthStore.persist.onHydrate(() => {
+      setHydrated(false);
+    });
+    const unsubscribeFinishHydration = useAuthStore.persist.onFinishHydration(() => {
+      setHydrated(true);
+    });
+
+    void useAuthStore.persist.rehydrate();
+
+    return () => {
+      unsubscribeHydrate();
+      unsubscribeFinishHydration();
+    };
+  }, [setHydrated]);
 
   useEffect(() => {
     if (!hydrated) {

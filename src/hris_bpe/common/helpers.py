@@ -8,5 +8,4 @@ def utc_now() -> datetime:
 
 
 def today_local() -> date:
-    return utc_now().date()
-
+    return datetime.now().date()

@@ -8,6 +8,7 @@ from hris_bpe.domains.dashboard.schemas import (
     DashboardAttendanceReportRead,
     DashboardDeploymentReportRead,
     DashboardEmployeeReportRead,
+    DashboardOpsSummaryRead,
     DashboardScheduleReportRead,
 )
 from hris_bpe.domains.dashboard.service import DashboardService
@@ -22,7 +23,11 @@ def ops_summary(
     current_user=Depends(require_permissions("dashboard.read")),
 ):
     service = DashboardService(db)
-    return success_payload("Ringkasan operasional berhasil diambil.", data=service.ops_summary(current_user))
+    data = DashboardOpsSummaryRead.model_validate(service.ops_summary(current_user))
+    return success_payload(
+        "Ringkasan operasional berhasil diambil.",
+        data=data.model_dump(mode="json"),
+    )
 
 
 @router.get("/reports/employees")

@@ -76,13 +76,18 @@ export default function DashboardPage() {
       },
       {
         label: "Present",
-        value: attendanceReportQuery.data.present_attendance,
-        helper: "Diambil dari reporting attendance harian.",
+        value: summaryQuery.data.present_attendance,
+        helper: "Guard yang check-in tepat waktu hari ini.",
       },
       {
         label: "Late",
-        value: attendanceReportQuery.data.late_attendance,
-        helper: "Diambil dari reporting attendance harian.",
+        value: summaryQuery.data.late_attendance,
+        helper: "Guard yang check-in terlambat hari ini.",
+      },
+      {
+        label: "Absent",
+        value: summaryQuery.data.absent_attendance,
+        helper: "Schedule published/approved tanpa attendance record.",
       },
     ];
   }, [attendanceReportQuery.data, summaryQuery.data]);
@@ -96,8 +101,8 @@ export default function DashboardPage() {
 
       <GapList
         items={[
-          "Kontrak dashboard belum menyediakan angka absent final. UI saat ini hanya menampilkan present dan late dari reporting attendance.",
-          "Jika nanti definisi absent sudah final, tambahkan metrik dan validasi ulang angka dashboard.",
+          "Absent dihitung dari schedule PUBLISHED atau APPROVED yang belum memiliki attendance record pada hari yang sama.",
+          "Status table tetap menampilkan status record attendance aktual, ditambah ABSENT sintetis bila ada schedule yang belum terisi.",
         ]}
       />
 

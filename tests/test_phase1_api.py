@@ -624,6 +624,9 @@ def test_dashboard_reports_and_ops_summary_follow_site_scope_for_supervisor():
             "active_deployments": 2,
             "schedules_today": 2,
             "attendance_today": 1,
+            "present_attendance": 1,
+            "late_attendance": 0,
+            "absent_attendance": 1,
         }
         assert supervisor_summary.json()["data"] == {
             "employees_total": 1,
@@ -632,6 +635,9 @@ def test_dashboard_reports_and_ops_summary_follow_site_scope_for_supervisor():
             "active_deployments": 1,
             "schedules_today": 1,
             "attendance_today": 1,
+            "present_attendance": 1,
+            "late_attendance": 0,
+            "absent_attendance": 0,
         }
 
         employee_report = client.get(
@@ -674,6 +680,9 @@ def test_dashboard_reports_and_ops_summary_follow_site_scope_for_supervisor():
         )
         assert attendance_report.status_code == 200
         assert attendance_report.json()["data"]["total_attendance"] == 1
+        assert attendance_report.json()["data"]["present_attendance"] == 1
+        assert attendance_report.json()["data"]["late_attendance"] == 0
+        assert attendance_report.json()["data"]["absent_attendance"] == 0
         assert attendance_report.json()["data"]["gps_valid_total"] == 1
         assert attendance_report.json()["data"]["geofence_valid_total"] == 1
         assert attendance_report.json()["data"]["face_valid_total"] == 1
@@ -684,6 +693,16 @@ def test_dashboard_reports_and_ops_summary_follow_site_scope_for_supervisor():
                 "total": 1,
             }
         ]
+
+        owner_attendance_report = client.get(
+            f"/api/v1/dashboard/reports/attendance?date_from={date.today().isoformat()}&date_to={date.today().isoformat()}",
+            headers=owner_headers,
+        )
+        assert owner_attendance_report.status_code == 200
+        assert owner_attendance_report.json()["data"]["present_attendance"] == 1
+        assert owner_attendance_report.json()["data"]["late_attendance"] == 0
+        assert owner_attendance_report.json()["data"]["absent_attendance"] == 1
+        assert {"key": "ABSENT", "total": 1} in owner_attendance_report.json()["data"]["by_status"]
 
 
 def test_branch_scoped_hr_only_sees_employees_inside_branch_scope():
@@ -1274,6 +1293,9 @@ def test_my_schedules_exposes_guard_contract_only_for_self_and_published_schedul
         my_schedules = client.get("/api/v1/my/schedules", headers=guard_headers)
         assert my_schedules.status_code == 200
         assert my_schedules.json()["meta"]["total"] == 1
+        assert my_schedules.json()["data"][0]["client_site_name"] == "Demo Site"
+        assert my_schedules.json()["data"][0]["site_post_name"] == "Main Gate"
+        assert my_schedules.json()["data"][0]["shift_type_name"] == "Shift Pagi"
         assert all(
             item["employee_id"] == guard_user["employee_id"]
             for item in my_schedules.json()["data"]

@@ -25,41 +25,45 @@ Fokus iterasi awal:
 | Screen | User Goal | Endpoint | Status Backend Saat Ini | Gap / Warning |
 | --- | --- | --- | --- | --- |
 | `/login` | admin login dan simpan session | `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `POST /api/v1/auth/logout` | siap dipakai | refresh token flow belum dipakai di UI web awal |
-| `/dashboard` | lihat ringkasan Basic | `GET /api/v1/dashboard/ops-summary`, `GET /api/v1/dashboard/reports/attendance` | siap dipakai untuk total inti | `ops-summary` belum memberi `present / late / absent`; `present` dan `late` diambil dari reporting attendance, `absent` belum punya kontrak final |
-| `/employees` | list dan create employee | `GET /api/v1/master-hr/employees`, `POST /api/v1/master-hr/employees`, `GET /api/v1/organization/companies`, `GET /api/v1/organization/branches`, `GET /api/v1/organization/departments`, `GET /api/v1/organization/positions` | list + create siap | belum ada endpoint detail employee khusus, update employee, dan filter server-side by branch/status/position |
-| `/clients` | list client, create client, list/create contract | `GET /api/v1/client-contract/clients`, `POST /api/v1/client-contract/clients`, `GET /api/v1/client-contract/contracts`, `POST /api/v1/client-contract/contracts`, `GET /api/v1/organization/companies` | list + create siap | belum ada update client, detail client, dan filter server-side |
-| `/sites` | list site, create site, list/create post | `GET /api/v1/site-operations/sites`, `POST /api/v1/site-operations/sites`, `GET /api/v1/site-operations/posts`, `POST /api/v1/site-operations/posts`, `GET /api/v1/client-contract/clients` | list + create siap | belum ada update site/post, detail site, dan filter server-side |
-| `/deployments` | assign guard ke site, list deployment, end deployment | `GET /api/v1/workforce-operations/deployments`, `POST /api/v1/workforce-operations/deployments`, `POST /api/v1/workforce-operations/deployments/{deployment_id}/end`, referensi employee/client/contract/site/post/position | create dan end deployment siap | belum ada update deployment, detail deployment, dan filter server-side by site/client/status |
-| `/schedules` | list schedule, generate schedule, publish schedule | `GET /api/v1/workforce-operations/work-schedules`, `POST /api/v1/workforce-operations/work-schedules/generate`, `POST /api/v1/workforce-operations/work-schedules/{schedule_id}/publish`, `GET /api/v1/workforce-operations/shift-types`, `POST /api/v1/workforce-operations/shift-types` | list + generate + publish siap | belum ada calendar view, detail schedule khusus, dan filter server-side by site/post/date |
-| `/attendance` | monitoring attendance, filter, lihat detail sederhana | `GET /api/v1/attendance/records`, `GET /api/v1/site-operations/sites` | list siap | belum ada endpoint detail attendance khusus; `absent` belum punya kontrak final terpisah; filter masih client-side |
-| `mobile guard` | lihat jadwal sendiri, check-in, check-out | roadmap: `/my/schedules`, `/attendance/check-in`, `/attendance/check-out` | `check-in` dan `check-out` ada | endpoint `/my/schedules` belum ditemukan di source backend saat ini |
+| `/dashboard` | lihat ringkasan Basic | `GET /api/v1/dashboard/ops-summary`, `GET /api/v1/dashboard/reports/attendance` | total inti + `present / late / absent` siap | `absent` diturunkan dari schedule `PUBLISHED` atau `APPROVED` tanpa attendance record; tabel status masih menggabungkan status record aktual dengan baris `ABSENT` sintetis |
+| `/employees` | list, create, detail, dan update employee | `GET /api/v1/master-hr/employees`, `POST /api/v1/master-hr/employees`, `GET /api/v1/master-hr/employees/{employee_id}`, `PUT /api/v1/master-hr/employees/{employee_id}`, `GET /api/v1/organization/companies`, `GET /api/v1/organization/branches`, `GET /api/v1/organization/departments`, `GET /api/v1/organization/positions` | list + create + detail + update siap | perubahan `company_id` belum ada di kontrak update employee; filter server-side by branch/status/position belum ada |
+| `/clients` | list/create/detail/update client, list/create contract | `GET /api/v1/client-contract/clients`, `POST /api/v1/client-contract/clients`, `GET /api/v1/client-contract/clients/{client_id}`, `PUT /api/v1/client-contract/clients/{client_id}`, `GET /api/v1/client-contract/contracts`, `POST /api/v1/client-contract/contracts`, `GET /api/v1/organization/companies` | client list + create + detail + update siap; contract list + create siap | endpoint update contract dan filter server-side belum ada |
+| `/sites` | list/create/detail/update site, list/create/detail/update post | `GET /api/v1/site-operations/sites`, `POST /api/v1/site-operations/sites`, `GET /api/v1/site-operations/sites/{site_id}`, `PUT /api/v1/site-operations/sites/{site_id}`, `GET /api/v1/site-operations/posts`, `POST /api/v1/site-operations/posts`, `GET /api/v1/site-operations/posts/{post_id}`, `PUT /api/v1/site-operations/posts/{post_id}`, `GET /api/v1/client-contract/clients` | site dan post list + create + detail + update siap | filter server-side belum ada |
+| `/deployments` | assign guard ke site, list/detail/update deployment, end deployment | `GET /api/v1/workforce-operations/deployments`, `POST /api/v1/workforce-operations/deployments`, `GET /api/v1/workforce-operations/deployments/{deployment_id}`, `PUT /api/v1/workforce-operations/deployments/{deployment_id}`, `POST /api/v1/workforce-operations/deployments/{deployment_id}/end`, referensi employee/client/contract/site/post/position | create + detail + update + end deployment siap | filter server-side by site/client/status belum ada |
+| `/schedules` | list/generate/detail/update/publish schedule | `GET /api/v1/workforce-operations/work-schedules`, `GET /api/v1/workforce-operations/work-schedules/{schedule_id}`, `PUT /api/v1/workforce-operations/work-schedules/{schedule_id}`, `POST /api/v1/workforce-operations/work-schedules/generate`, `POST /api/v1/workforce-operations/work-schedules/{schedule_id}/publish`, `GET /api/v1/workforce-operations/shift-types`, `POST /api/v1/workforce-operations/shift-types` | list + generate + detail + update + publish siap | belum ada calendar view dan filter server-side by site/post/date |
+| `/attendance` | monitoring attendance, filter, lihat detail, manual adjustment, dan exception | `GET /api/v1/attendance/records`, `GET /api/v1/attendance/records/{attendance_record_id}`, `GET /api/v1/attendance/manual-adjustments`, `POST /api/v1/attendance/manual-adjustments`, `GET /api/v1/attendance/exceptions`, `POST /api/v1/attendance/exceptions`, `POST /api/v1/attendance/exceptions/{exception_id}/resolve`, `GET /api/v1/site-operations/sites`, `GET /api/v1/site-operations/posts`, `GET /api/v1/master-hr/employees` | list + detail + action attendance dasar siap | `absent` sekarang dihitung dari schedule tanpa attendance record, sehingga belum muncul sebagai baris record attendance tersendiri; filter masih client-side |
+| `mobile guard` | login, lihat jadwal sendiri, status hadir hari ini, check-in, check-out | `POST /api/v1/auth/login`, `GET /api/v1/my/schedules`, `GET /api/v1/attendance/records`, `POST /api/v1/attendance/check-in`, `POST /api/v1/attendance/check-out` | source Flutter minimal siap; kontrak backend guard flow sudah tervalidasi via integration test | build/runtime mobile belum diverifikasi di environment ini karena Flutter SDK, `dart`, `adb`, dan emulator runner belum siap; folder platform perlu dibootstrap dengan `flutter create .` bila belum ada |
 
 ## Gap Prioritas Sebelum Pilot
 
 ### P0 - Harus jelas sebelum demo pilot
 
-- finalisasi kontrak `absent` untuk dashboard Basic
-- pastikan endpoint guard `my schedules` ada atau revisi roadmap ke kontrak yang benar
 - review naming final payload sebelum UI dan mobile melebar
 
 ### P1 - Bisa jalan dulu dengan fallback UI
 
 - filter masih client-side pada list Basic
-- detail entity memakai data list atau panel ringkas, karena belum ada endpoint detail khusus
-- edit entity ditunda sampai endpoint update tersedia
+- validasi runtime mobile guard setelah Flutter SDK tersedia di environment kerja
+- update contract, calendar schedule, dan action attendance lanjutan selain adjustment/exception masih ditunda sesuai kontrak backend/UI
 
 ## Implementasi Web Admin Iterasi 1
 
 | Screen | Scope UI Saat Ini |
 | --- | --- |
 | Login | form login, simpan token, auth guard, user profile, logout |
-| Dashboard | total employee, client, site, deployment aktif, schedule hari ini, attendance hari ini, present, late |
-| Employees | create employee, list employee, filter client-side |
-| Clients | create client, create contract, list client, list contract |
-| Sites | create site, create post, list site, list post |
-| Deployments | assign guard, end deployment, list deployment, filter client-side |
-| Schedules | create shift type, generate schedule, publish draft, list schedule, filter client-side |
-| Attendance | list attendance, filter client-side, detail sederhana, flag GPS/geofence/face |
+| Dashboard | total employee, client, site, deployment aktif, schedule hari ini, attendance hari ini, present, late, absent |
+| Employees | create employee, list employee, detail employee, update employee, filter client-side |
+| Clients | create client, update client, detail client, create contract, list client, list contract |
+| Sites | create site, update site, detail site, create post, update post, detail post, list site, list post |
+| Deployments | assign guard, detail deployment, update deployment, end deployment, list deployment, filter client-side |
+| Schedules | create shift type, generate schedule, detail schedule, update schedule, publish draft, list schedule, filter client-side |
+| Attendance | list attendance, filter client-side, detail via endpoint khusus, flag GPS/geofence/face, manual adjustment, create/resolve exception |
+
+## Implementasi Mobile Guard Iterasi 1
+
+| Screen | Scope UI Saat Ini |
+| --- | --- |
+| Mobile guard | login, persist session, list `my schedules`, status hadir hari ini, check-in GPS, check-out GPS |
 
 ## Keterkaitan dengan Roadmap
 

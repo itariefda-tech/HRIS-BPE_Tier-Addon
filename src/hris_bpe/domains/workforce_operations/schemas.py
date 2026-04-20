@@ -139,6 +139,12 @@ class WorkScheduleRead(BaseModel):
     updated_at: datetime
 
 
+class MyWorkScheduleRead(WorkScheduleRead):
+    client_site_name: str | None = None
+    site_post_name: str | None = None
+    shift_type_name: str | None = None
+
+
 class EndDeploymentRequest(BaseModel):
     end_date: date
     notes: str | None = None

@@ -22,6 +22,18 @@ class DashboardSiteCountRead(BaseModel):
     total: int
 
 
+class DashboardOpsSummaryRead(BaseModel):
+    employees_total: int
+    clients_total: int
+    sites_total: int
+    active_deployments: int
+    schedules_today: int
+    attendance_today: int
+    present_attendance: int
+    late_attendance: int
+    absent_attendance: int
+
+
 class DashboardEmployeeReportRead(BaseModel):
     total_employees: int
     active_employees: int
@@ -54,6 +66,7 @@ class DashboardAttendanceReportRead(BaseModel):
     total_attendance: int
     present_attendance: int
     late_attendance: int
+    absent_attendance: int
     completed_attendance: int
     gps_valid_total: int
     geofence_valid_total: int

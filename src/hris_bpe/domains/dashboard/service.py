@@ -115,6 +115,35 @@ class DashboardService:
             for row in rows
         ]
 
+    def _absent_schedule_count(
+        self,
+        current_user: CurrentUserContext,
+        *,
+        date_from: date,
+        date_to: date,
+    ) -> int:
+        schedule_scope_conditions = self._operational_scope_conditions(
+            current_user,
+            employee_id_column=WorkSchedule.employee_id,
+            site_id_column=WorkSchedule.client_site_id,
+        )
+        absent_stmt = (
+            select(func.count(WorkSchedule.id))
+            .select_from(WorkSchedule)
+            .outerjoin(
+                AttendanceRecord,
+                AttendanceRecord.work_schedule_id == WorkSchedule.id,
+            )
+            .where(
+                WorkSchedule.scheduled_date >= date_from,
+                WorkSchedule.scheduled_date <= date_to,
+                WorkSchedule.schedule_status.in_(("PUBLISHED", "APPROVED")),
+                AttendanceRecord.id.is_(None),
+                *schedule_scope_conditions,
+            )
+        )
+        return int(self.db.execute(absent_stmt).scalar_one() or 0)
+
     def ops_summary(self, current_user: CurrentUserContext) -> dict[str, int]:
         today = today_local()
         employee_stmt = select(func.count()).select_from(Employee).where(
@@ -162,6 +191,45 @@ class DashboardService:
                 )
             )
         )
+        attendance_classification_stmt = (
+            select(
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                (AttendanceRecord.check_in_datetime.is_not(None))
+                                & (AttendanceRecord.minutes_late == 0),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("present_attendance"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                (AttendanceRecord.check_in_datetime.is_not(None))
+                                & (AttendanceRecord.minutes_late > 0),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("late_attendance"),
+            )
+            .select_from(AttendanceRecord)
+            .where(AttendanceRecord.attendance_date == today)
+            .where(
+                *self._operational_scope_conditions(
+                    current_user,
+                    employee_id_column=AttendanceRecord.employee_id,
+                    site_id_column=AttendanceRecord.client_site_id,
+                )
+            )
+        )
 
         employees_total = self.db.execute(employee_stmt).scalar_one()
         clients_total = self.db.execute(client_stmt).scalar_one()
@@ -169,6 +237,12 @@ class DashboardService:
         active_deployments = self.db.execute(deployment_stmt).scalar_one()
         schedules_today = self.db.execute(schedule_stmt).scalar_one()
         attendance_today = self.db.execute(attendance_stmt).scalar_one()
+        attendance_classification = self.db.execute(attendance_classification_stmt).one()
+        absent_attendance = self._absent_schedule_count(
+            current_user,
+            date_from=today,
+            date_to=today,
+        )
         return {
             "employees_total": int(employees_total or 0),
             "clients_total": int(clients_total or 0),
@@ -176,6 +250,9 @@ class DashboardService:
             "active_deployments": int(active_deployments or 0),
             "schedules_today": int(schedules_today or 0),
             "attendance_today": int(attendance_today or 0),
+            "present_attendance": int(attendance_classification.present_attendance or 0),
+            "late_attendance": int(attendance_classification.late_attendance or 0),
+            "absent_attendance": absent_attendance,
         }
 
     def employee_report(self, current_user: CurrentUserContext) -> dict:
@@ -344,6 +421,38 @@ class DashboardService:
         aggregate_row = self.db.execute(
             select(
                 func.count(AttendanceRecord.id).label("total_attendance"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                (AttendanceRecord.check_in_datetime.is_not(None))
+                                & (AttendanceRecord.minutes_late == 0),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("present_attendance"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                (AttendanceRecord.check_in_datetime.is_not(None))
+                                & (AttendanceRecord.minutes_late > 0),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("late_attendance"),
+                func.coalesce(
+                    func.sum(
+                        case((AttendanceRecord.check_out_datetime.is_not(None), 1), else_=0)
+                    ),
+                    0,
+                ).label("completed_attendance"),
                 func.coalesce(func.sum(AttendanceRecord.working_minutes), 0).label(
                     "total_working_minutes"
                 ),
@@ -380,7 +489,14 @@ class DashboardService:
             .group_by(status_key)
             .order_by(func.count(AttendanceRecord.id).desc(), status_key.asc())
         ).all()
-        status_totals = {str(row.key): int(row.total or 0) for row in by_status_rows}
+        absent_attendance = self._absent_schedule_count(
+            current_user,
+            date_from=normalized_from,
+            date_to=normalized_to,
+        )
+        by_status_payload = self._grouped_count_payload(by_status_rows)
+        if absent_attendance > 0:
+            by_status_payload.append({"key": "ABSENT", "total": absent_attendance})
         by_site_rows = self.db.execute(
             select(
                 ClientSite.id.label("client_site_id"),
@@ -397,14 +513,15 @@ class DashboardService:
             "date_from": normalized_from,
             "date_to": normalized_to,
             "total_attendance": int(aggregate_row.total_attendance or 0),
-            "present_attendance": int(status_totals.get("PRESENT", 0)),
-            "late_attendance": int(status_totals.get("LATE", 0)),
-            "completed_attendance": int(status_totals.get("COMPLETED", 0)),
+            "present_attendance": int(aggregate_row.present_attendance or 0),
+            "late_attendance": int(aggregate_row.late_attendance or 0),
+            "absent_attendance": absent_attendance,
+            "completed_attendance": int(aggregate_row.completed_attendance or 0),
             "gps_valid_total": int(aggregate_row.gps_valid_total or 0),
             "geofence_valid_total": int(aggregate_row.geofence_valid_total or 0),
             "face_valid_total": int(aggregate_row.face_valid_total or 0),
             "total_working_minutes": int(aggregate_row.total_working_minutes or 0),
             "total_overtime_minutes": int(aggregate_row.total_overtime_minutes or 0),
-            "by_status": self._grouped_count_payload(by_status_rows),
+            "by_status": by_status_payload,
             "by_site": self._site_count_payload(by_site_rows),
         }

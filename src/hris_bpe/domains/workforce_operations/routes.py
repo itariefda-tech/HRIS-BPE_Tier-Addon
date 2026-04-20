@@ -9,6 +9,7 @@ from hris_bpe.domains.workforce_operations.schemas import (
     EmployeeDeploymentCreateRequest,
     EmployeeDeploymentRead,
     EmployeeDeploymentUpdateRequest,
+    MyWorkScheduleRead,
     ShiftTypeCreateRequest,
     ShiftTypeRead,
     WorkScheduleCreateRequest,
@@ -231,7 +232,7 @@ def list_my_schedules(
 ):
     service = WorkforceOperationsService(db)
     items = [
-        WorkScheduleRead.model_validate(item).model_dump(mode="json")
+        service.build_my_schedule_read(item).model_dump(mode="json")
         for item in service.list_my_schedules(current_user)
     ]
     return success_payload(

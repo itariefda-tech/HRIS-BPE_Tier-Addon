@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     app_debug: bool = True
     app_host: str = "127.0.0.1"
     app_port: int = 8000
+    cors_allowed_origins: str = (
+        "http://localhost:3000,http://127.0.0.1:3000,http://10.144.110.126:3000"
+    )
     api_v1_prefix: str = "/api/v1"
     secret_key: str = "change-this-in-production-at-least-32-characters"
     access_token_expire_minutes: int = 720
@@ -36,6 +39,14 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        return [
+            origin.strip()
+            for origin in self.cors_allowed_origins.split(",")
+            if origin.strip()
+        ]
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -45,6 +56,10 @@ def get_settings() -> Settings:
         app_debug=os.getenv("APP_DEBUG", "true").lower() in {"1", "true", "yes"},
         app_host=os.getenv("APP_HOST", Settings.model_fields["app_host"].default),
         app_port=int(os.getenv("APP_PORT", Settings.model_fields["app_port"].default)),
+        cors_allowed_origins=os.getenv(
+            "CORS_ALLOWED_ORIGINS",
+            Settings.model_fields["cors_allowed_origins"].default,
+        ),
         api_v1_prefix=os.getenv(
             "API_V1_PREFIX", Settings.model_fields["api_v1_prefix"].default
         ),

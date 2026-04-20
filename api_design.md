@@ -94,6 +94,52 @@ Payroll / Contract / Attendance → Billing → Analytics / Audit / Portal / Int
 ### Add-on
 Endpoint modular yang dapat diaktifkan terpisah tanpa merusak endpoint inti.
 
+## 2.2 Klasifikasi core vs support
+
+### Definisi
+
+**Core API**:
+- endpoint yang langsung membentuk alur bisnis operasional utama
+- endpoint yang menjadi sumber transaksi harian dan dipakai oleh web admin atau mobile guard untuk menjalankan operasi
+
+**Support API**:
+- endpoint yang menyiapkan akses, master referensi, kontrol produk, monitoring, koreksi, approval, atau ekstensi di sekitar alur utama
+- endpoint ini tetap penting, tetapi tidak menjadi transaksi inti operasional lapangan
+
+### Klasifikasi untuk phase HRIS Basic
+
+#### Core API Basic
+
+Alur inti tetap:
+
+```text
+Employee -> Deployment -> Schedule -> Attendance
+```
+
+Endpoint/domain yang masuk **core API** pada phase Basic:
+- `employees` dan `guards`
+- `clients`, `contracts`, `sites`, `posts`
+- `deployments`
+- `shift-types` dan `schedules`
+- `my/schedules`
+- `attendance/check-in`, `attendance/check-out`, `attendance`, `attendance/{id}`
+
+#### Support API Basic
+
+Endpoint/domain yang masuk **support API** pada phase Basic:
+- `auth`
+- `users`, `roles`, `permissions`, `scopes`
+- `companies`, `branches`, `departments`, `positions`
+- `product tiers` dan `feature modules`
+- `dashboard` dan `reports`
+- attendance support seperti `exceptions`, `adjustments`, dan approval/koreksi attendance
+
+### Catatan penting
+
+- `dashboard` tetap wajib ada untuk phase UI Basic, tetapi secara klasifikasi API ia termasuk **support / monitoring**, karena hanya membaca dan merangkum data dari domain core
+- `auth` wajib untuk semua client, tetapi secara desain tetap dianggap **support / foundation API**, bukan domain bisnis inti
+- endpoint Pro, Enterprise, dan Add-on berada di luar core Basic, walaupun beberapa di antaranya dapat menjadi core pada tier produknya masing-masing
+
 ---
 
 # 3. AUTHENTICATION & AUTHORIZATION
@@ -203,24 +249,34 @@ Akses berbasis:
 # 5. DOMAIN API UTAMA
 
 Domain endpoint utama:
-- auth
-- users & access
-- organization
+
+## 5.1 Core domain operasional Basic
+
 - employees
 - guards
 - clients
 - contracts
 - sites & posts
-- manpower planning
 - deployments
 - shifts & schedules
 - attendance
+
+## 5.2 Support domain foundation & monitoring Basic
+
+- auth
+- users & access
+- organization
+- manpower planning
+- product control
+- dashboard & reports
+
+## 5.3 Extension domain di luar core Basic
+
 - leave & replacement
 - patrol
 - incidents
 - payroll
 - billing
-- dashboard & reports
 - audit
 - notifications
 - client portal

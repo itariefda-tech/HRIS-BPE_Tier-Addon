@@ -33,6 +33,18 @@ Alternatif command setelah editable install:
 hris-bpe-dev
 ```
 
+Untuk akses dari device fisik di jaringan LAN, jalankan backend dengan host `0.0.0.0`:
+
+```powershell
+.\scripts\run-backend-lan.ps1
+```
+
+Atau langsung:
+
+```powershell
+python -m hris_bpe.dev --host 0.0.0.0 --port 8000
+```
+
 Jika hanya ingin bootstrap database tanpa start server:
 
 ```powershell

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { DataState } from "@/components/ui/data-state";
@@ -8,8 +8,9 @@ import { GapList } from "@/components/ui/gap-list";
 import { PageHeader } from "@/components/ui/page-header";
 import { api } from "@/lib/api";
 import { todayInputValue } from "@/lib/date";
-import { formatDate } from "@/lib/format";
+import { fallbackText, formatDate, formatDateTime } from "@/lib/format";
 import { optionalNumber, optionalText, requiredNumber } from "@/lib/forms";
+import type { EmployeeDeployment } from "@/lib/types";
 import {
   inputClass,
   labelClass,
@@ -31,6 +32,17 @@ type DeploymentFormValues = {
   site_post_id: string;
   position_id: string;
   start_date: string;
+  source_type: string;
+  notes: string;
+};
+
+type DeploymentEditFormValues = {
+  client_contract_id: string;
+  client_site_id: string;
+  site_post_id: string;
+  position_id: string;
+  start_date: string;
+  source_type: string;
   notes: string;
 };
 
@@ -40,32 +52,67 @@ type EndDeploymentFormValues = {
   notes: string;
 };
 
+const deploymentFormDefaults: DeploymentFormValues = {
+  employee_id: "",
+  client_id: "",
+  client_contract_id: "",
+  client_site_id: "",
+  site_post_id: "",
+  position_id: "",
+  start_date: todayInputValue(),
+  source_type: "",
+  notes: "",
+};
+
+const deploymentEditFormDefaults: DeploymentEditFormValues = {
+  client_contract_id: "",
+  client_site_id: "",
+  site_post_id: "",
+  position_id: "",
+  start_date: "",
+  source_type: "",
+  notes: "",
+};
+
+const endFormDefaults: EndDeploymentFormValues = {
+  deployment_id: "",
+  end_date: todayInputValue(),
+  notes: "",
+};
+
+function toDeploymentEditFormValues(
+  deployment: EmployeeDeployment,
+): DeploymentEditFormValues {
+  return {
+    client_contract_id: String(deployment.client_contract_id),
+    client_site_id: String(deployment.client_site_id),
+    site_post_id: deployment.site_post_id ? String(deployment.site_post_id) : "",
+    position_id: deployment.position_id ? String(deployment.position_id) : "",
+    start_date: deployment.start_date,
+    source_type: deployment.source_type ?? "",
+    notes: deployment.notes ?? "",
+  };
+}
+
 export default function DeploymentsPage() {
   const queryClient = useQueryClient();
   const accessToken = useAuthStore((state) => state.session?.access_token);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
   const [endSuccess, setEndSuccess] = useState<string | null>(null);
+  const [updateSuccess, setUpdateSuccess] = useState<string | null>(null);
   const [clientFilter, setClientFilter] = useState("");
   const [siteFilter, setSiteFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [selectedDeploymentId, setSelectedDeploymentId] = useState<number | null>(null);
+
   const deploymentForm = useForm<DeploymentFormValues>({
-    defaultValues: {
-      employee_id: "",
-      client_id: "",
-      client_contract_id: "",
-      client_site_id: "",
-      site_post_id: "",
-      position_id: "",
-      start_date: todayInputValue(),
-      notes: "",
-    },
+    defaultValues: deploymentFormDefaults,
+  });
+  const deploymentEditForm = useForm<DeploymentEditFormValues>({
+    defaultValues: deploymentEditFormDefaults,
   });
   const endForm = useForm<EndDeploymentFormValues>({
-    defaultValues: {
-      deployment_id: "",
-      end_date: todayInputValue(),
-      notes: "",
-    },
+    defaultValues: endFormDefaults,
   });
 
   const employeesQuery = useQuery({
@@ -112,6 +159,10 @@ export default function DeploymentsPage() {
     () => new Map((clientsQuery.data ?? []).map((item) => [item.id, item.name])),
     [clientsQuery.data],
   );
+  const contractNumberById = useMemo(
+    () => new Map((contractsQuery.data ?? []).map((item) => [item.id, item.contract_number])),
+    [contractsQuery.data],
+  );
   const siteNameById = useMemo(
     () => new Map((sitesQuery.data ?? []).map((item) => [item.id, item.name])),
     [sitesQuery.data],
@@ -134,6 +185,33 @@ export default function DeploymentsPage() {
     });
   }, [clientFilter, deploymentsQuery.data, siteFilter, statusFilter]);
 
+  const effectiveSelectedDeploymentId = useMemo(() => {
+    if (filteredDeployments.length === 0) {
+      return null;
+    }
+
+    if (selectedDeploymentId !== null) {
+      const selectedStillVisible = filteredDeployments.some(
+        (item) => item.id === selectedDeploymentId,
+      );
+      if (selectedStillVisible) {
+        return selectedDeploymentId;
+      }
+    }
+
+    return filteredDeployments[0].id;
+  }, [filteredDeployments, selectedDeploymentId]);
+
+  const deploymentDetailQuery = useQuery({
+    queryKey: ["deployment-detail", effectiveSelectedDeploymentId],
+    queryFn: () =>
+      api.workforceOperations.getDeploymentDetail(
+        accessToken!,
+        effectiveSelectedDeploymentId!,
+      ),
+    enabled: Boolean(accessToken) && effectiveSelectedDeploymentId !== null,
+  });
+
   const createDeploymentMutation = useMutation({
     mutationFn: (values: DeploymentFormValues) =>
       api.workforceOperations.createDeployment(accessToken!, {
@@ -144,21 +222,35 @@ export default function DeploymentsPage() {
         site_post_id: optionalNumber(values.site_post_id),
         position_id: optionalNumber(values.position_id),
         start_date: values.start_date,
+        source_type: optionalText(values.source_type),
         notes: optionalText(values.notes),
       }),
-    onSuccess: () => {
+    onSuccess: (deployment) => {
       setCreateSuccess("Deployment berhasil dibuat.");
-      deploymentForm.reset({
-        employee_id: "",
-        client_id: "",
-        client_contract_id: "",
-        client_site_id: "",
-        site_post_id: "",
-        position_id: "",
-        start_date: todayInputValue(),
-        notes: "",
-      });
+      setUpdateSuccess(null);
+      deploymentForm.reset(deploymentFormDefaults);
+      setSelectedDeploymentId(deployment.id);
+      queryClient.setQueryData(["deployment-detail", deployment.id], deployment);
       queryClient.invalidateQueries({ queryKey: ["deployments"] });
+    },
+  });
+
+  const updateDeploymentMutation = useMutation({
+    mutationFn: (values: DeploymentEditFormValues) =>
+      api.workforceOperations.updateDeployment(accessToken!, effectiveSelectedDeploymentId!, {
+        client_contract_id: requiredNumber(values.client_contract_id),
+        client_site_id: requiredNumber(values.client_site_id),
+        site_post_id: optionalNumber(values.site_post_id),
+        position_id: optionalNumber(values.position_id),
+        start_date: values.start_date,
+        source_type: optionalText(values.source_type),
+        notes: optionalText(values.notes),
+      }),
+    onSuccess: (deployment) => {
+      setUpdateSuccess("Deployment berhasil diperbarui.");
+      queryClient.setQueryData(["deployment-detail", deployment.id], deployment);
+      queryClient.invalidateQueries({ queryKey: ["deployments"] });
+      deploymentEditForm.reset(toDeploymentEditFormValues(deployment));
     },
   });
 
@@ -172,27 +264,36 @@ export default function DeploymentsPage() {
           notes: optionalText(values.notes),
         },
       ),
-    onSuccess: () => {
+    onSuccess: (deployment) => {
       setEndSuccess("Deployment berhasil diakhiri.");
-      endForm.reset({
-        deployment_id: "",
-        end_date: todayInputValue(),
-        notes: "",
-      });
+      setSelectedDeploymentId(deployment.id);
+      queryClient.setQueryData(["deployment-detail", deployment.id], deployment);
       queryClient.invalidateQueries({ queryKey: ["deployments"] });
+      endForm.reset(endFormDefaults);
     },
   });
+
+  useEffect(() => {
+    if (!deploymentDetailQuery.data) {
+      return;
+    }
+
+    deploymentEditForm.reset(toDeploymentEditFormValues(deploymentDetailQuery.data));
+  }, [deploymentDetailQuery.data, deploymentEditForm]);
+
+  const selectedDeployment = deploymentDetailQuery.data ?? null;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Deployment"
-        description="Assign guard ke site, lihat deployment aktif, dan akhiri deployment."
+        description="Assign guard ke site, lihat deployment aktif, akhiri deployment, dan update relasi operasional."
       />
 
       <GapList
         items={[
-          "Belum ada endpoint detail deployment khusus dan update deployment.",
+          "Detail dan update deployment sudah memakai endpoint /api/v1/workforce-operations/deployments/{deployment_id}.",
+          "End deployment tetap memakai endpoint khusus agar workflow penutupan deployment tidak bercampur dengan edit biasa.",
           "Filter site, client, dan status masih berjalan client-side.",
         ]}
       />
@@ -272,14 +373,23 @@ export default function DeploymentsPage() {
                 ))}
               </select>
             </div>
-            <div className="md:col-span-2">
+            <div>
               <label className={labelClass}>Start Date</label>
-              <input className={inputClass} type="date" {...deploymentForm.register("start_date", { required: true })} />
+              <input
+                className={inputClass}
+                type="date"
+                {...deploymentForm.register("start_date", { required: true })}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Source Type</label>
+              <input className={inputClass} {...deploymentForm.register("source_type")} />
             </div>
             <div className="md:col-span-2">
               <label className={labelClass}>Notes</label>
-              <input className={inputClass} {...deploymentForm.register("notes")} />
+              <textarea className={`${inputClass} min-h-24`} {...deploymentForm.register("notes")} />
             </div>
+
             {createSuccess ? (
               <div className="rounded-md bg-[color:var(--success)]/10 px-3 py-2 text-sm text-[color:var(--success)] md:col-span-2">
                 {createSuccess}
@@ -301,7 +411,7 @@ export default function DeploymentsPage() {
               <button
                 type="button"
                 className={secondaryButtonClass}
-                onClick={() => deploymentForm.reset()}
+                onClick={() => deploymentForm.reset(deploymentFormDefaults)}
               >
                 Reset
               </button>
@@ -324,7 +434,7 @@ export default function DeploymentsPage() {
                   .map((item) => (
                     <option key={item.id} value={item.id}>
                       {(employeeNameById.get(item.employee_id) ?? `Employee ${item.employee_id}`) +
-                        " · " +
+                        " - " +
                         (siteNameById.get(item.client_site_id) ?? `Site ${item.client_site_id}`)}
                     </option>
                   ))}
@@ -336,8 +446,9 @@ export default function DeploymentsPage() {
             </div>
             <div>
               <label className={labelClass}>Notes</label>
-              <input className={inputClass} {...endForm.register("notes")} />
+              <textarea className={`${inputClass} min-h-24`} {...endForm.register("notes")} />
             </div>
+
             {endSuccess ? (
               <div className="rounded-md bg-[color:var(--success)]/10 px-3 py-2 text-sm text-[color:var(--success)]">
                 {endSuccess}
@@ -359,7 +470,7 @@ export default function DeploymentsPage() {
               <button
                 type="button"
                 className={secondaryButtonClass}
-                onClick={() => endForm.reset()}
+                onClick={() => endForm.reset(endFormDefaults)}
               >
                 Reset
               </button>
@@ -420,13 +531,15 @@ export default function DeploymentsPage() {
               deploymentsQuery.isLoading ||
               employeesQuery.isLoading ||
               clientsQuery.isLoading ||
-              sitesQuery.isLoading
+              sitesQuery.isLoading ||
+              contractsQuery.isLoading
             }
             error={
               deploymentsQuery.error ??
               employeesQuery.error ??
               clientsQuery.error ??
-              sitesQuery.error
+              sitesQuery.error ??
+              contractsQuery.error
             }
             isEmpty={filteredDeployments.length === 0}
             emptyMessage="Belum ada deployment yang cocok dengan filter."
@@ -439,38 +552,287 @@ export default function DeploymentsPage() {
                     <th className={tableHeadClass}>Client</th>
                     <th className={tableHeadClass}>Site</th>
                     <th className={tableHeadClass}>Post</th>
-                    <th className={tableHeadClass}>Position</th>
                     <th className={tableHeadClass}>Status</th>
                     <th className={tableHeadClass}>Period</th>
+                    <th className={tableHeadClass}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredDeployments.map((item) => (
-                    <tr key={item.id} className="border-t border-[color:var(--border)]">
-                      <td className={tableCellClass}>
-                        {employeeNameById.get(item.employee_id) ?? `Employee ${item.employee_id}`}
-                      </td>
-                      <td className={tableCellClass}>
-                        {clientNameById.get(item.client_id) ?? `Client ${item.client_id}`}
-                      </td>
-                      <td className={tableCellClass}>
-                        {siteNameById.get(item.client_site_id) ?? `Site ${item.client_site_id}`}
-                      </td>
-                      <td className={tableCellClass}>
-                        {postNameById.get(item.site_post_id ?? -1) ?? "-"}
-                      </td>
-                      <td className={tableCellClass}>
-                        {positionNameById.get(item.position_id ?? -1) ?? "-"}
-                      </td>
-                      <td className={tableCellClass}>{item.deployment_status}</td>
-                      <td className={tableCellClass}>
-                        {formatDate(item.start_date)} - {formatDate(item.end_date)}
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredDeployments.map((item) => {
+                    const isSelected = item.id === effectiveSelectedDeploymentId;
+                    return (
+                      <tr
+                        key={item.id}
+                        className={`border-t border-[color:var(--border)] ${
+                          isSelected ? "bg-[color:var(--muted-surface)]" : ""
+                        }`}
+                      >
+                        <td className={tableCellClass}>
+                          {employeeNameById.get(item.employee_id) ?? `Employee ${item.employee_id}`}
+                        </td>
+                        <td className={tableCellClass}>
+                          {clientNameById.get(item.client_id) ?? `Client ${item.client_id}`}
+                        </td>
+                        <td className={tableCellClass}>
+                          {siteNameById.get(item.client_site_id) ?? `Site ${item.client_site_id}`}
+                        </td>
+                        <td className={tableCellClass}>
+                          {postNameById.get(item.site_post_id ?? -1) ?? "-"}
+                        </td>
+                        <td className={tableCellClass}>{item.deployment_status}</td>
+                        <td className={tableCellClass}>
+                          {formatDate(item.start_date)} - {formatDate(item.end_date)}
+                        </td>
+                        <td className={tableCellClass}>
+                          <button
+                            type="button"
+                            className={secondaryButtonClass}
+                            onClick={() => {
+                              setSelectedDeploymentId(item.id);
+                              setUpdateSuccess(null);
+                            }}
+                          >
+                            {isSelected ? "Dipilih" : "Detail"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
+          </DataState>
+        </div>
+      </section>
+
+      <section className={surfaceClass}>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Detail dan Update Deployment</h2>
+            <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
+              Panel ini memakai detail deployment dari API agar perubahan relasi site, post, dan
+              contract tercatat lewat kontrak yang benar.
+            </p>
+          </div>
+          {selectedDeployment ? (
+            <p className="text-sm text-[color:var(--muted-foreground)]">
+              Deployment ID: {selectedDeployment.id}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="mt-4">
+          <DataState
+            isLoading={Boolean(effectiveSelectedDeploymentId) && deploymentDetailQuery.isLoading}
+            error={deploymentDetailQuery.error}
+            isEmpty={!effectiveSelectedDeploymentId}
+            emptyMessage="Pilih deployment dari tabel untuk melihat detail dan update."
+          >
+            {selectedDeployment ? (
+              <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr]">
+                <div className="space-y-4 text-sm">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.08em] text-[color:var(--muted-foreground)]">
+                      Deployment
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-[color:var(--foreground)]">
+                      {employeeNameById.get(selectedDeployment.employee_id) ??
+                        `Employee ${selectedDeployment.employee_id}`}
+                    </p>
+                    <p className="mt-1 text-[color:var(--muted-foreground)]">
+                      {clientNameById.get(selectedDeployment.client_id) ??
+                        `Client ${selectedDeployment.client_id}`}
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.08em] text-[color:var(--muted-foreground)]">
+                        Contract
+                      </p>
+                      <p className="mt-1">
+                        {contractNumberById.get(selectedDeployment.client_contract_id) ??
+                          `Contract ${selectedDeployment.client_contract_id}`}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.08em] text-[color:var(--muted-foreground)]">
+                        Site
+                      </p>
+                      <p className="mt-1">
+                        {siteNameById.get(selectedDeployment.client_site_id) ??
+                          `Site ${selectedDeployment.client_site_id}`}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.08em] text-[color:var(--muted-foreground)]">
+                        Site Post
+                      </p>
+                      <p className="mt-1">
+                        {postNameById.get(selectedDeployment.site_post_id ?? -1) ?? "-"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.08em] text-[color:var(--muted-foreground)]">
+                        Position
+                      </p>
+                      <p className="mt-1">
+                        {positionNameById.get(selectedDeployment.position_id ?? -1) ?? "-"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.08em] text-[color:var(--muted-foreground)]">
+                        Status
+                      </p>
+                      <p className="mt-1">{selectedDeployment.deployment_status}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.08em] text-[color:var(--muted-foreground)]">
+                        Source Type
+                      </p>
+                      <p className="mt-1">{fallbackText(selectedDeployment.source_type)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.08em] text-[color:var(--muted-foreground)]">
+                        Start Date
+                      </p>
+                      <p className="mt-1">{formatDate(selectedDeployment.start_date)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.08em] text-[color:var(--muted-foreground)]">
+                        End Date
+                      </p>
+                      <p className="mt-1">{formatDate(selectedDeployment.end_date)}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.08em] text-[color:var(--muted-foreground)]">
+                      Notes
+                    </p>
+                    <p className="mt-1">{fallbackText(selectedDeployment.notes)}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.08em] text-[color:var(--muted-foreground)]">
+                      Audit
+                    </p>
+                    <p className="mt-1">Dibuat: {formatDateTime(selectedDeployment.created_at)}</p>
+                    <p className="mt-1">
+                      Diperbarui: {formatDateTime(selectedDeployment.updated_at)}
+                    </p>
+                  </div>
+                </div>
+
+                <form
+                  className="grid gap-4 md:grid-cols-2"
+                  onSubmit={deploymentEditForm.handleSubmit((values) =>
+                    updateDeploymentMutation.mutate(values),
+                  )}
+                >
+                  <div>
+                    <label className={labelClass}>Contract</label>
+                    <select
+                      className={inputClass}
+                      {...deploymentEditForm.register("client_contract_id", { required: true })}
+                    >
+                      <option value="">Pilih contract</option>
+                      {(contractsQuery.data ?? []).map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.contract_number}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Site</label>
+                    <select
+                      className={inputClass}
+                      {...deploymentEditForm.register("client_site_id", { required: true })}
+                    >
+                      <option value="">Pilih site</option>
+                      {(sitesQuery.data ?? []).map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Site Post</label>
+                    <select className={inputClass} {...deploymentEditForm.register("site_post_id")}>
+                      <option value="">Tanpa post</option>
+                      {(postsQuery.data ?? []).map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Position</label>
+                    <select className={inputClass} {...deploymentEditForm.register("position_id")}>
+                      <option value="">Tanpa position</option>
+                      {(positionsQuery.data ?? []).map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Start Date</label>
+                    <input
+                      className={inputClass}
+                      type="date"
+                      {...deploymentEditForm.register("start_date", { required: true })}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Source Type</label>
+                    <input className={inputClass} {...deploymentEditForm.register("source_type")} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className={labelClass}>Notes</label>
+                    <textarea
+                      className={`${inputClass} min-h-24`}
+                      {...deploymentEditForm.register("notes")}
+                    />
+                  </div>
+
+                  {updateSuccess ? (
+                    <div className="rounded-md bg-[color:var(--success)]/10 px-3 py-2 text-sm text-[color:var(--success)] md:col-span-2">
+                      {updateSuccess}
+                    </div>
+                  ) : null}
+                  {updateDeploymentMutation.error ? (
+                    <div className="rounded-md bg-[color:var(--danger)]/10 px-3 py-2 text-sm text-[color:var(--danger)] md:col-span-2">
+                      {updateDeploymentMutation.error.message}
+                    </div>
+                  ) : null}
+                  <div className="flex gap-2 md:col-span-2">
+                    <button
+                      type="submit"
+                      className={primaryButtonClass}
+                      disabled={updateDeploymentMutation.isPending}
+                    >
+                      {updateDeploymentMutation.isPending ? "Menyimpan..." : "Update deployment"}
+                    </button>
+                    <button
+                      type="button"
+                      className={secondaryButtonClass}
+                      onClick={() =>
+                        selectedDeployment
+                          ? deploymentEditForm.reset(toDeploymentEditFormValues(selectedDeployment))
+                          : deploymentEditForm.reset(deploymentEditFormDefaults)
+                      }
+                    >
+                      Reset perubahan
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : null}
           </DataState>
         </div>
       </section>

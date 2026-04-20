@@ -1,5 +1,7 @@
 import type {
   ApiEnvelope,
+  AttendanceException,
+  AttendanceManualAdjustment,
   AttendanceRecord,
   AuthUser,
   Branch,
@@ -126,9 +128,21 @@ export const api = {
   masterHr: {
     listEmployees: (token: string) =>
       request<Employee[]>("/master-hr/employees", { token }),
+    getEmployeeDetail: (token: string, employeeId: number) =>
+      request<Employee>(`/master-hr/employees/${employeeId}`, { token }),
     createEmployee: (token: string, payload: Record<string, unknown>) =>
       request<Employee>("/master-hr/employees", {
         method: "POST",
+        token,
+        body: payload,
+      }),
+    updateEmployee: (
+      token: string,
+      employeeId: number,
+      payload: Record<string, unknown>,
+    ) =>
+      request<Employee>(`/master-hr/employees/${employeeId}`, {
+        method: "PUT",
         token,
         body: payload,
       }),
@@ -136,9 +150,21 @@ export const api = {
   clientContract: {
     listClients: (token: string) =>
       request<Client[]>("/client-contract/clients", { token }),
+    getClientDetail: (token: string, clientId: number) =>
+      request<Client>(`/client-contract/clients/${clientId}`, { token }),
     createClient: (token: string, payload: Record<string, unknown>) =>
       request<Client>("/client-contract/clients", {
         method: "POST",
+        token,
+        body: payload,
+      }),
+    updateClient: (
+      token: string,
+      clientId: number,
+      payload: Record<string, unknown>,
+    ) =>
+      request<Client>(`/client-contract/clients/${clientId}`, {
+        method: "PUT",
         token,
         body: payload,
       }),
@@ -154,17 +180,33 @@ export const api = {
   siteOperations: {
     listSites: (token: string) =>
       request<ClientSite[]>("/site-operations/sites", { token }),
+    getSiteDetail: (token: string, siteId: number) =>
+      request<ClientSite>(`/site-operations/sites/${siteId}`, { token }),
     createSite: (token: string, payload: Record<string, unknown>) =>
       request<ClientSite>("/site-operations/sites", {
         method: "POST",
         token,
         body: payload,
       }),
+    updateSite: (token: string, siteId: number, payload: Record<string, unknown>) =>
+      request<ClientSite>(`/site-operations/sites/${siteId}`, {
+        method: "PUT",
+        token,
+        body: payload,
+      }),
     listPosts: (token: string) =>
       request<SitePost[]>("/site-operations/posts", { token }),
+    getPostDetail: (token: string, postId: number) =>
+      request<SitePost>(`/site-operations/posts/${postId}`, { token }),
     createPost: (token: string, payload: Record<string, unknown>) =>
       request<SitePost>("/site-operations/posts", {
         method: "POST",
+        token,
+        body: payload,
+      }),
+    updatePost: (token: string, postId: number, payload: Record<string, unknown>) =>
+      request<SitePost>(`/site-operations/posts/${postId}`, {
+        method: "PUT",
         token,
         body: payload,
       }),
@@ -172,12 +214,30 @@ export const api = {
   workforceOperations: {
     listDeployments: (token: string) =>
       request<EmployeeDeployment[]>("/workforce-operations/deployments", { token }),
+    getDeploymentDetail: (token: string, deploymentId: number) =>
+      request<EmployeeDeployment>(
+        `/workforce-operations/deployments/${deploymentId}`,
+        { token },
+      ),
     createDeployment: (token: string, payload: Record<string, unknown>) =>
       request<EmployeeDeployment>("/workforce-operations/deployments", {
         method: "POST",
         token,
         body: payload,
       }),
+    updateDeployment: (
+      token: string,
+      deploymentId: number,
+      payload: Record<string, unknown>,
+    ) =>
+      request<EmployeeDeployment>(
+        `/workforce-operations/deployments/${deploymentId}`,
+        {
+          method: "PUT",
+          token,
+          body: payload,
+        },
+      ),
     endDeployment: (
       token: string,
       deploymentId: number,
@@ -201,6 +261,24 @@ export const api = {
       }),
     listWorkSchedules: (token: string) =>
       request<WorkSchedule[]>("/workforce-operations/work-schedules", { token }),
+    getWorkScheduleDetail: (token: string, scheduleId: number) =>
+      request<WorkSchedule>(
+        `/workforce-operations/work-schedules/${scheduleId}`,
+        { token },
+      ),
+    updateWorkSchedule: (
+      token: string,
+      scheduleId: number,
+      payload: Record<string, unknown>,
+    ) =>
+      request<WorkSchedule>(
+        `/workforce-operations/work-schedules/${scheduleId}`,
+        {
+          method: "PUT",
+          token,
+          body: payload,
+        },
+      ),
     generateWorkSchedules: (token: string, payload: Record<string, unknown>) =>
       request<WorkSchedule[]>("/workforce-operations/work-schedules/generate", {
         method: "POST",
@@ -219,6 +297,34 @@ export const api = {
   attendance: {
     listRecords: (token: string) =>
       request<AttendanceRecord[]>("/attendance/records", { token }),
+    getRecordDetail: (token: string, attendanceRecordId: number) =>
+      request<AttendanceRecord>(`/attendance/records/${attendanceRecordId}`, { token }),
+    listManualAdjustments: (token: string) =>
+      request<AttendanceManualAdjustment[]>("/attendance/manual-adjustments", { token }),
+    createManualAdjustment: (token: string, payload: Record<string, unknown>) =>
+      request<AttendanceManualAdjustment>("/attendance/manual-adjustments", {
+        method: "POST",
+        token,
+        body: payload,
+      }),
+    listExceptions: (token: string) =>
+      request<AttendanceException[]>("/attendance/exceptions", { token }),
+    createException: (token: string, payload: Record<string, unknown>) =>
+      request<AttendanceException>("/attendance/exceptions", {
+        method: "POST",
+        token,
+        body: payload,
+      }),
+    resolveException: (
+      token: string,
+      exceptionId: number,
+      payload: Record<string, unknown>,
+    ) =>
+      request<AttendanceException>(`/attendance/exceptions/${exceptionId}/resolve`, {
+        method: "POST",
+        token,
+        body: payload,
+      }),
   },
   dashboard: {
     opsSummary: (token: string) =>

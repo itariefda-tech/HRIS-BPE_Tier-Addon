@@ -241,6 +241,31 @@ export type AttendanceRecord = {
   updated_at: string;
 };
 
+export type AttendanceManualAdjustment = {
+  id: number;
+  attendance_record_id: number;
+  old_check_in_datetime: string | null;
+  new_check_in_datetime: string | null;
+  old_check_out_datetime: string | null;
+  new_check_out_datetime: string | null;
+  reason: string;
+  approved_by: number | null;
+  created_by: number | null;
+  created_at: string;
+};
+
+export type AttendanceException = {
+  id: number;
+  attendance_record_id: number;
+  exception_type: string;
+  description: string;
+  resolution_status: string;
+  resolved_by: number | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type DashboardOpsSummary = {
   employees_total: number;
   clients_total: number;
@@ -248,6 +273,9 @@ export type DashboardOpsSummary = {
   active_deployments: number;
   schedules_today: number;
   attendance_today: number;
+  present_attendance: number;
+  late_attendance: number;
+  absent_attendance: number;
 };
 
 export type DashboardGroupedCount = {
@@ -267,6 +295,7 @@ export type DashboardAttendanceReport = {
   total_attendance: number;
   present_attendance: number;
   late_attendance: number;
+  absent_attendance: number;
   completed_attendance: number;
   gps_valid_total: number;
   geofence_valid_total: number;
