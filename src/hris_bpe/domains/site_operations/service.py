@@ -14,7 +14,9 @@ from hris_bpe.domains.site_operations.models import ClientSite, SitePost
 from hris_bpe.domains.site_operations.repository import SiteOperationsRepository
 from hris_bpe.domains.site_operations.schemas import (
     ClientSiteCreateRequest,
+    ClientSiteUpdateRequest,
     SitePostCreateRequest,
+    SitePostUpdateRequest,
 )
 
 
@@ -37,6 +39,23 @@ class SiteOperationsService:
         if current_user.site_scope_ids:
             items = [item for item in items if item.id in current_user.site_scope_ids]
         return items
+
+    def _get_accessible_site(
+        self, current_user: CurrentUserContext, site_id: int
+    ) -> ClientSite:
+        site = self.repository.get_site(site_id)
+        if site is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Site tidak ditemukan.",
+            )
+        allowed_site_ids = {item.id for item in self.list_sites(current_user)}
+        if site.id not in allowed_site_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Site tidak berada dalam scope akses user.",
+            )
+        return site
 
     def create_site(self, current_user: CurrentUserContext, payload: ClientSiteCreateRequest):
         client = self.db.get(Client, payload.client_id)
@@ -65,6 +84,52 @@ class SiteOperationsService:
         self.db.refresh(item)
         return item
 
+    def get_site_detail(
+        self, current_user: CurrentUserContext, site_id: int
+    ) -> ClientSite:
+        return self._get_accessible_site(current_user, site_id)
+
+    def update_site(
+        self,
+        current_user: CurrentUserContext,
+        site_id: int,
+        payload: ClientSiteUpdateRequest,
+    ) -> ClientSite:
+        site = self._get_accessible_site(current_user, site_id)
+        changes = payload.model_dump(exclude_unset=True)
+        if not changes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Payload update site kosong.",
+            )
+        client = self.db.get(Client, site.client_id)
+        if client is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Client site tidak valid.",
+            )
+        ensure_company_access(
+            current_user,
+            client.company_id,
+            detail="Site tidak berada dalam scope company user.",
+        )
+        if current_user.branch_scope_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User dengan scope branch tidak diizinkan mengubah site.",
+            )
+        if current_user.site_scope_ids and site.id not in current_user.site_scope_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Site tidak berada dalam scope site user.",
+            )
+        for field_name, value in changes.items():
+            setattr(site, field_name, value)
+        site.updated_by = current_user.user.id
+        self.db.commit()
+        self.db.refresh(site)
+        return site
+
     def list_posts(self, current_user: CurrentUserContext):
         site_client_map = {
             site.id: site.client_id for site in self.repository.list_sites()
@@ -82,6 +147,23 @@ class SiteOperationsService:
         if current_user.site_scope_ids:
             items = [item for item in items if item.client_site_id in current_user.site_scope_ids]
         return items
+
+    def _get_accessible_post(
+        self, current_user: CurrentUserContext, post_id: int
+    ) -> SitePost:
+        post = self.repository.get_post(post_id)
+        if post is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Site post tidak ditemukan.",
+            )
+        allowed_post_ids = {item.id for item in self.list_posts(current_user)}
+        if post.id not in allowed_post_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Site post tidak berada dalam scope akses user.",
+            )
+        return post
 
     def create_post(self, current_user: CurrentUserContext, payload: SitePostCreateRequest):
         site = self.db.get(ClientSite, payload.client_site_id)
@@ -120,3 +202,50 @@ class SiteOperationsService:
         self.db.commit()
         self.db.refresh(item)
         return item
+
+    def get_post_detail(
+        self, current_user: CurrentUserContext, post_id: int
+    ) -> SitePost:
+        return self._get_accessible_post(current_user, post_id)
+
+    def update_post(
+        self,
+        current_user: CurrentUserContext,
+        post_id: int,
+        payload: SitePostUpdateRequest,
+    ) -> SitePost:
+        post = self._get_accessible_post(current_user, post_id)
+        changes = payload.model_dump(exclude_unset=True)
+        if not changes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Payload update site post kosong.",
+            )
+        site = self._get_accessible_site(current_user, post.client_site_id)
+        client = self.db.get(Client, site.client_id)
+        if client is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Client site tidak valid.",
+            )
+        ensure_company_access(
+            current_user,
+            client.company_id,
+            detail="Site post tidak berada dalam scope company user.",
+        )
+        if current_user.branch_scope_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User dengan scope branch tidak diizinkan mengubah site post.",
+            )
+        if current_user.site_scope_ids and post.client_site_id not in current_user.site_scope_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Site post tidak berada dalam scope site user.",
+            )
+        for field_name, value in changes.items():
+            setattr(post, field_name, value)
+        post.updated_by = current_user.user.id
+        self.db.commit()
+        self.db.refresh(post)
+        return post

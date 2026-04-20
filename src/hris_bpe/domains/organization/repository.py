@@ -13,6 +13,9 @@ class OrganizationRepository:
     def list_companies(self) -> list[Company]:
         return list(self.db.execute(select(Company).order_by(Company.code)).scalars())
 
+    def get_company(self, company_id: int) -> Company | None:
+        return self.db.get(Company, company_id)
+
     def list_branches(self) -> list[Branch]:
         return list(self.db.execute(select(Branch).order_by(Branch.code)).scalars())
 

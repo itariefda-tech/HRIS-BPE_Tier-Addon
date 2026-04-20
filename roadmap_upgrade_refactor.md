@@ -143,9 +143,9 @@
 - [x] migrasikan emergency contact dan employee documents
 - [x] tambahkan import batch employee
 - [x] tambahkan lifecycle employee yang lebih lengkap
-- [ ] tambahkan company setting untuk default language
-- [ ] tambahkan company setting untuk default theme
-- [ ] siapkan fallback: user preference > company default > system default
+- [x] tambahkan company setting untuk default language
+- [x] tambahkan company setting untuk default theme
+- [x] siapkan fallback: user preference > company default > system default
 
 ---
 

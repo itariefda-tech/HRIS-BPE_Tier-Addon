@@ -19,6 +19,16 @@ class EmployeeDeploymentCreateRequest(BaseModel):
     notes: str | None = None
 
 
+class EmployeeDeploymentUpdateRequest(BaseModel):
+    client_contract_id: int | None = None
+    client_site_id: int | None = None
+    site_post_id: int | None = None
+    position_id: int | None = None
+    start_date: date | None = None
+    source_type: str | None = None
+    notes: str | None = None
+
+
 class EmployeeDeploymentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -90,6 +100,14 @@ class WorkScheduleCreateRequest(BaseModel):
     scheduled_start_datetime: datetime | None = None
     scheduled_end_datetime: datetime | None = None
     schedule_status: str = "DRAFT"
+    replacement_for_schedule_id: int | None = None
+
+
+class WorkScheduleUpdateRequest(BaseModel):
+    shift_type_id: int | None = None
+    scheduled_date: date | None = None
+    scheduled_start_datetime: datetime | None = None
+    scheduled_end_datetime: datetime | None = None
     replacement_for_schedule_id: int | None = None
 
 

@@ -13,3 +13,4 @@ build/
 *.db
 *.sqlite3
 coverage.xml
+backend-dev.log

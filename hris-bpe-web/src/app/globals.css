@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+:root {
+  --background: #eef2eb;
+  --foreground: #1f2b1d;
+  --surface: #ffffff;
+  --muted-surface: #e4ebe1;
+  --muted-foreground: #50614d;
+  --border: #c5d3c0;
+  --accent: #2f7d4c;
+  --accent-strong: #225d39;
+  --danger: #b34b3c;
+  --warning: #b87a23;
+  --success: #2d7c58;
+}
+
+[data-theme="theme_1"] {
+  --background: #eef2eb;
+  --foreground: #1f2b1d;
+  --surface: #ffffff;
+  --muted-surface: #e4ebe1;
+  --muted-foreground: #50614d;
+  --border: #c5d3c0;
+  --accent: #2f7d4c;
+  --accent-strong: #225d39;
+  --danger: #b34b3c;
+  --warning: #b87a23;
+  --success: #2d7c58;
+}
+
+[data-theme="theme_2"] {
+  --background: #f4efe7;
+  --foreground: #2d231d;
+  --surface: #fffdf9;
+  --muted-surface: #ede3d7;
+  --muted-foreground: #68584d;
+  --border: #dbc8b8;
+  --accent: #9e4334;
+  --accent-strong: #7d3227;
+  --danger: #9c2f2d;
+  --warning: #b9831f;
+  --success: #3b7e57;
+}
+
+[data-theme="theme_3"] {
+  --background: #edf4f3;
+  --foreground: #17353a;
+  --surface: #ffffff;
+  --muted-surface: #dde9e8;
+  --muted-foreground: #4b6367;
+  --border: #b9d0d1;
+  --accent: #0f7a78;
+  --accent-strong: #0b5d5b;
+  --danger: #bb4d3b;
+  --warning: #a87a18;
+  --success: #28715f;
+}
+
+[data-theme="theme_4"] {
+  --background: #f5f1eb;
+  --foreground: #2b2721;
+  --surface: #ffffff;
+  --muted-surface: #ece4d9;
+  --muted-foreground: #6b6255;
+  --border: #d8ccb9;
+  --accent: #b0532c;
+  --accent-strong: #8d411f;
+  --danger: #b53c36;
+  --warning: #b37a1d;
+  --success: #3c7b4b;
+}
+
+[data-theme="theme_5"] {
+  --background: #eef3ea;
+  --foreground: #1d2f23;
+  --surface: #ffffff;
+  --muted-surface: #dfe7db;
+  --muted-foreground: #526252;
+  --border: #c1d0be;
+  --accent: #486c2f;
+  --accent-strong: #345021;
+  --danger: #a64338;
+  --warning: #9f7a1f;
+  --success: #2f7d4c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+body {
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}

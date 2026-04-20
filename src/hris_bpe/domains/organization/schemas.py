@@ -4,6 +4,14 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from hris_bpe.domains.auth.schemas import PreferredLanguage, PreferredTheme
+
+
+def _normalize_optional_preference(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return value.strip().lower()
+
 
 class CompanyCreateRequest(BaseModel):
     code: str = Field(min_length=2, max_length=60)
@@ -13,12 +21,29 @@ class CompanyCreateRequest(BaseModel):
     address: str | None = None
     phone: str | None = None
     email: EmailStr | None = None
+    default_language: PreferredLanguage | None = None
+    default_theme: PreferredTheme | None = None
     status: str = "ACTIVE"
 
     @field_validator("code")
     @classmethod
     def normalize_code(cls, value: str) -> str:
         return value.strip().upper()
+
+    @field_validator("default_language", "default_theme", mode="before")
+    @classmethod
+    def normalize_preferences(cls, value: str | None) -> str | None:
+        return _normalize_optional_preference(value)
+
+
+class CompanySettingsUpdateRequest(BaseModel):
+    default_language: PreferredLanguage | None = None
+    default_theme: PreferredTheme | None = None
+
+    @field_validator("default_language", "default_theme", mode="before")
+    @classmethod
+    def normalize_preferences(cls, value: str | None) -> str | None:
+        return _normalize_optional_preference(value)
 
 
 class CompanyRead(BaseModel):
@@ -32,6 +57,8 @@ class CompanyRead(BaseModel):
     address: str | None
     phone: str | None
     email: EmailStr | None
+    default_language: PreferredLanguage | None
+    default_theme: PreferredTheme | None
     status: str
     created_at: datetime
     updated_at: datetime

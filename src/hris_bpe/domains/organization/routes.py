@@ -7,6 +7,7 @@ from hris_bpe.domains.organization.schemas import (
     BranchRead,
     CompanyCreateRequest,
     CompanyRead,
+    CompanySettingsUpdateRequest,
     DepartmentCreateRequest,
     DepartmentRead,
     PositionCreateRequest,
@@ -40,6 +41,21 @@ def create_company(
     service = OrganizationService(db)
     item = service.create_company(current_user, payload)
     return success_payload("Company berhasil dibuat.", data=CompanyRead.model_validate(item).model_dump(mode="json"))
+
+
+@router.put("/companies/{company_id}/settings")
+def update_company_settings(
+    company_id: int,
+    payload: CompanySettingsUpdateRequest,
+    db: DbSession,
+    current_user=Depends(require_permissions("companies.manage")),
+):
+    service = OrganizationService(db)
+    item = service.update_company_settings(current_user, company_id, payload)
+    return success_payload(
+        "Setting company berhasil diperbarui.",
+        data=CompanyRead.model_validate(item).model_dump(mode="json"),
+    )
 
 
 @router.get("/branches")

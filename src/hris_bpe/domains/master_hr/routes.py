@@ -16,6 +16,7 @@ from hris_bpe.domains.master_hr.schemas import (
     EmployeeLifecycleEventRead,
     EmployeeLifecycleTransitionRead,
     EmployeeRead,
+    EmployeeUpdateRequest,
     GuardProfileCreateRequest,
     GuardProfileRead,
 )
@@ -47,6 +48,35 @@ def create_employee(
     service = MasterHRService(db)
     item = service.create_employee(current_user, payload)
     return success_payload("Employee berhasil dibuat.", data=EmployeeRead.model_validate(item).model_dump(mode="json"))
+
+
+@router.get("/employees/{employee_id}")
+def get_employee_detail(
+    employee_id: int,
+    db: DbSession,
+    current_user=Depends(require_permissions("employees.read")),
+):
+    service = MasterHRService(db)
+    item = service.get_employee_detail(current_user, employee_id)
+    return success_payload(
+        "Detail employee berhasil diambil.",
+        data=EmployeeRead.model_validate(item).model_dump(mode="json"),
+    )
+
+
+@router.put("/employees/{employee_id}")
+def update_employee(
+    employee_id: int,
+    payload: EmployeeUpdateRequest,
+    db: DbSession,
+    current_user=Depends(require_permissions("employees.manage")),
+):
+    service = MasterHRService(db)
+    item = service.update_employee(current_user, employee_id, payload)
+    return success_payload(
+        "Employee berhasil diperbarui.",
+        data=EmployeeRead.model_validate(item).model_dump(mode="json"),
+    )
 
 
 @router.post("/employees/imports/batch")

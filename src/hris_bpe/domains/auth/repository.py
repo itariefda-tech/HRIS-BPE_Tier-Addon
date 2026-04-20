@@ -6,6 +6,10 @@ from sqlalchemy.orm import Session
 from hris_bpe.common.helpers import utc_now
 from hris_bpe.domains.access_control.repository import AccessControlRepository
 from hris_bpe.domains.auth.models import AuthRefreshSession, AuthTokenRevocation
+from hris_bpe.domains.client_contract.models import Client
+from hris_bpe.domains.master_hr.models import Employee
+from hris_bpe.domains.organization.models import Branch, Company
+from hris_bpe.domains.site_operations.models import ClientSite
 
 
 class AuthRepository(AccessControlRepository):
@@ -16,6 +20,31 @@ class AuthRepository(AccessControlRepository):
         self.db.add(item)
         self.db.flush()
         return item
+
+    def get_company(self, company_id: int) -> Company | None:
+        return self.db.get(Company, company_id)
+
+    def get_employee_company_id(self, employee_id: int | None) -> int | None:
+        if employee_id is None:
+            return None
+        employee = self.db.get(Employee, employee_id)
+        return employee.company_id if employee is not None else None
+
+    def list_company_ids_for_branch_scope(self, branch_ids: list[int]) -> set[int]:
+        if not branch_ids:
+            return set()
+        statement = select(Branch.company_id).where(Branch.id.in_(branch_ids))
+        return set(self.db.execute(statement).scalars())
+
+    def list_company_ids_for_site_scope(self, site_ids: list[int]) -> set[int]:
+        if not site_ids:
+            return set()
+        statement = (
+            select(Client.company_id)
+            .join(ClientSite, ClientSite.client_id == Client.id)
+            .where(ClientSite.id.in_(site_ids))
+        )
+        return set(self.db.execute(statement).scalars())
 
     def get_refresh_session_by_session_id(
         self, session_id: str

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import get_args
 from uuid import uuid4
 
 import jwt
@@ -34,8 +35,12 @@ from hris_bpe.domains.auth.schemas import (
 class AuthService:
     SYSTEM_DEFAULT_LANGUAGE = "id"
     SYSTEM_DEFAULT_THEME = "theme_1"
-    ALLOWED_LANGUAGES = {"id", "en"}
-    ALLOWED_THEMES = {"theme_1", "theme_2", "theme_3", "theme_4", "theme_5"}
+    ALLOWED_LANGUAGES = set(
+        get_args(AuthenticatedUser.model_fields["preferred_language"].annotation)
+    )
+    ALLOWED_THEMES = set(
+        get_args(AuthenticatedUser.model_fields["preferred_theme"].annotation)
+    )
 
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -54,21 +59,31 @@ class AuthService:
         roles = self.repository.list_roles_for_user(user.id)
         permissions = self.repository.list_permissions_for_user(user.id)
         scopes = self.repository.list_scopes_for_user(user.id)
+        company_ids = {role.company_id for role in roles if role.company_id is not None}
+        company_default_language, company_default_theme = self._resolve_company_defaults(
+            user,
+            company_ids=company_ids,
+            scopes=scopes,
+        )
         return AuthenticatedUser(
             id=user.id,
             employee_id=user.employee_id,
             username=user.username,
             email=user.email,
             phone=user.phone,
-            preferred_language=self._resolve_preferred_language(user),
-            preferred_theme=self._resolve_preferred_theme(user),
+            preferred_language=self._resolve_preferred_language(
+                user,
+                company_default_language=company_default_language,
+            ),
+            preferred_theme=self._resolve_preferred_theme(
+                user,
+                company_default_theme=company_default_theme,
+            ),
             is_active=user.is_active,
             last_login_at=user.last_login_at,
             role_codes=[role.code for role in roles],
             permission_codes=[permission.code for permission in permissions],
-            company_ids=sorted(
-                {role.company_id for role in roles if role.company_id is not None}
-            ),
+            company_ids=sorted(company_ids),
             company_scope_ids=sorted(
                 {scope.company_id for scope in scopes if scope.company_id is not None}
             ),
@@ -86,18 +101,104 @@ class AuthService:
         )
 
     @classmethod
-    def _resolve_preferred_language(cls, user) -> str:
-        value = (user.preferred_language or "").strip().lower()
-        if value in cls.ALLOWED_LANGUAGES:
+    def _normalize_preference_value(
+        cls,
+        value: str | None,
+        *,
+        allowed_values: set[str],
+    ) -> str | None:
+        value = (value or "").strip().lower()
+        if value in allowed_values:
             return value
-        return cls.SYSTEM_DEFAULT_LANGUAGE
+        return None
 
     @classmethod
-    def _resolve_preferred_theme(cls, user) -> str:
-        value = (user.preferred_theme or "").strip().lower()
-        if value in cls.ALLOWED_THEMES:
-            return value
-        return cls.SYSTEM_DEFAULT_THEME
+    def _resolve_preferred_language(
+        cls,
+        user,
+        *,
+        company_default_language: str | None,
+    ) -> str:
+        return (
+            cls._normalize_preference_value(
+                user.preferred_language,
+                allowed_values=cls.ALLOWED_LANGUAGES,
+            )
+            or company_default_language
+            or cls.SYSTEM_DEFAULT_LANGUAGE
+        )
+
+    @classmethod
+    def _resolve_preferred_theme(
+        cls,
+        user,
+        *,
+        company_default_theme: str | None,
+    ) -> str:
+        return (
+            cls._normalize_preference_value(
+                user.preferred_theme,
+                allowed_values=cls.ALLOWED_THEMES,
+            )
+            or company_default_theme
+            or cls.SYSTEM_DEFAULT_THEME
+        )
+
+    def _resolve_company_defaults(
+        self,
+        user,
+        *,
+        company_ids: set[int],
+        scopes,
+    ) -> tuple[str | None, str | None]:
+        company = self._resolve_preference_company(
+            user,
+            company_ids=company_ids,
+            scopes=scopes,
+        )
+        if company is None:
+            return None, None
+        return (
+            self._normalize_preference_value(
+                company.default_language,
+                allowed_values=self.ALLOWED_LANGUAGES,
+            ),
+            self._normalize_preference_value(
+                company.default_theme,
+                allowed_values=self.ALLOWED_THEMES,
+            ),
+        )
+
+    def _resolve_preference_company(self, user, *, company_ids: set[int], scopes):
+        scope_company_ids = {
+            scope.company_id for scope in scopes if scope.company_id is not None
+        }
+        if len(scope_company_ids) == 1:
+            return self.repository.get_company(next(iter(scope_company_ids)))
+
+        branch_scope_ids = [
+            scope.branch_id for scope in scopes if scope.branch_id is not None
+        ]
+        branch_company_ids = self.repository.list_company_ids_for_branch_scope(
+            branch_scope_ids
+        )
+        if len(branch_company_ids) == 1:
+            return self.repository.get_company(next(iter(branch_company_ids)))
+
+        site_scope_ids = [
+            scope.client_site_id for scope in scopes if scope.client_site_id is not None
+        ]
+        site_company_ids = self.repository.list_company_ids_for_site_scope(site_scope_ids)
+        if len(site_company_ids) == 1:
+            return self.repository.get_company(next(iter(site_company_ids)))
+
+        employee_company_id = self.repository.get_employee_company_id(user.employee_id)
+        if employee_company_id is not None:
+            return self.repository.get_company(employee_company_id)
+
+        if not company_ids:
+            return None
+        return self.repository.get_company(sorted(company_ids)[0])
 
     @staticmethod
     def _generate_session_id() -> str:

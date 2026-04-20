@@ -42,6 +42,20 @@ def list_records(
     return success_payload("Daftar attendance berhasil diambil.", data=items, meta={"total": len(items)})
 
 
+@router.get("/records/{attendance_record_id}")
+def get_record(
+    attendance_record_id: int,
+    db: DbSession,
+    current_user=Depends(require_permissions("attendance.read")),
+):
+    service = AttendanceService(db)
+    item = service.get_record(current_user, attendance_record_id)
+    return success_payload(
+        "Detail attendance berhasil diambil.",
+        data=AttendanceRead.model_validate(item).model_dump(mode="json"),
+    )
+
+
 @router.post("/check-in")
 def check_in(
     payload: AttendanceCheckRequest,

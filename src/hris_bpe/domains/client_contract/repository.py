@@ -18,6 +18,9 @@ class ClientContractRepository:
         self.db.flush()
         return item
 
+    def get_client(self, client_id: int) -> Client | None:
+        return self.db.get(Client, client_id)
+
     def list_contracts(self) -> list[ClientContract]:
         return list(self.db.execute(select(ClientContract).order_by(ClientContract.contract_number)).scalars())
 
@@ -25,4 +28,3 @@ class ClientContractRepository:
         self.db.add(item)
         self.db.flush()
         return item
-

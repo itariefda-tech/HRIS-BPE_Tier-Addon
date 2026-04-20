@@ -31,6 +31,32 @@ class EmployeeCreateRequest(BaseModel):
         return value.strip().upper()
 
 
+class EmployeeUpdateRequest(BaseModel):
+    branch_id: int | None = None
+    department_id: int | None = None
+    position_id: int | None = None
+    employee_number: str | None = Field(default=None, min_length=2, max_length=80)
+    full_name: str | None = Field(default=None, min_length=2, max_length=180)
+    nik: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    address: str | None = None
+    gender: str | None = None
+    marital_status: str | None = None
+    hire_date: date | None = None
+    employment_status: str | None = None
+    employee_status: str | None = None
+    resign_date: date | None = None
+    photo_path: str | None = None
+
+    @field_validator("employee_number")
+    @classmethod
+    def normalize_employee_number(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip().upper()
+
+
 class EmployeeRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -23,6 +23,8 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, AuditActorMixin, VersionedM
     address: Mapped[str | None] = mapped_column(Text(), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     email: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    default_language: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    default_theme: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(40), default="ACTIVE")
 
 

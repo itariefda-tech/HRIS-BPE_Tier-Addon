@@ -18,6 +18,9 @@ class SiteOperationsRepository:
         self.db.flush()
         return item
 
+    def get_site(self, site_id: int) -> ClientSite | None:
+        return self.db.get(ClientSite, site_id)
+
     def list_posts(self) -> list[SitePost]:
         return list(self.db.execute(select(SitePost).order_by(SitePost.code)).scalars())
 
@@ -26,3 +29,5 @@ class SiteOperationsRepository:
         self.db.flush()
         return item
 
+    def get_post(self, post_id: int) -> SitePost | None:
+        return self.db.get(SitePost, post_id)

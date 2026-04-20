@@ -80,6 +80,23 @@ class AttendanceService:
             items = [item for item in items if item.employee_id == current_user.user.employee_id]
         return items
 
+    def get_record(
+        self, current_user: CurrentUserContext, attendance_record_id: int
+    ) -> AttendanceRecord:
+        record = self.repository.get_record(attendance_record_id)
+        if record is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attendance record tidak ditemukan.",
+            )
+        allowed_record_ids = {item.id for item in self.list_records(current_user)}
+        if record.id not in allowed_record_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Attendance record tidak berada dalam scope user.",
+            )
+        return record
+
     def list_exceptions(self, current_user: CurrentUserContext):
         allowed_record_ids = {item.id for item in self.list_records(current_user)}
         return [

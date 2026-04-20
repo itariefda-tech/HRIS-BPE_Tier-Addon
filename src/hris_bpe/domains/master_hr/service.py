@@ -25,6 +25,7 @@ from hris_bpe.domains.master_hr.schemas import (
     EmployeeDocumentCreateRequest,
     EmployeeEmergencyContactCreateRequest,
     EmployeeLifecycleEventCreateRequest,
+    EmployeeUpdateRequest,
     GuardProfileCreateRequest,
 )
 from hris_bpe.domains.organization.models import Branch, Department, Position
@@ -162,6 +163,54 @@ class MasterHRService:
         self.db.commit()
         self.db.refresh(item)
         return item
+
+    def get_employee_detail(
+        self, current_user: CurrentUserContext, employee_id: int
+    ) -> Employee:
+        return self._get_accessible_employee(current_user, employee_id)
+
+    def update_employee(
+        self,
+        current_user: CurrentUserContext,
+        employee_id: int,
+        payload: EmployeeUpdateRequest,
+    ) -> Employee:
+        employee = self._get_accessible_employee(current_user, employee_id)
+        changes = payload.model_dump(exclude_unset=True)
+        if not changes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Payload update employee kosong.",
+            )
+
+        new_branch_id = changes.get("branch_id", employee.branch_id)
+        new_department_id = changes.get("department_id", employee.department_id)
+        new_position_id = changes.get("position_id", employee.position_id)
+        self._validate_employee_reference_scope(
+            current_user,
+            company_id=employee.company_id,
+            branch_id=new_branch_id,
+            department_id=new_department_id,
+            position_id=new_position_id,
+        )
+
+        new_employee_number = changes.get("employee_number")
+        if new_employee_number and new_employee_number != employee.employee_number:
+            existing_employee = self.repository.get_employee_by_company_and_number(
+                employee.company_id,
+                new_employee_number,
+            )
+            if existing_employee is not None and existing_employee.id != employee.id:
+                self._raise_duplicate_code(
+                    "Employee number sudah digunakan pada company ini."
+                )
+
+        for field_name, value in changes.items():
+            setattr(employee, field_name, value)
+        employee.updated_by = current_user.user.id
+        self.db.commit()
+        self.db.refresh(employee)
+        return employee
 
     def import_employees_batch(
         self, current_user: CurrentUserContext, payload: EmployeeBatchImportRequest

@@ -10,6 +10,7 @@ from hris_bpe.domains.organization.repository import OrganizationRepository
 from hris_bpe.domains.organization.schemas import (
     BranchCreateRequest,
     CompanyCreateRequest,
+    CompanySettingsUpdateRequest,
     DepartmentCreateRequest,
     PositionCreateRequest,
 )
@@ -65,6 +66,37 @@ class OrganizationService:
             updated_by=current_user.user.id,
         )
         self.repository.create_company(item)
+        self.db.commit()
+        self.db.refresh(item)
+        return item
+
+    def update_company_settings(
+        self,
+        current_user: CurrentUserContext,
+        company_id: int,
+        payload: CompanySettingsUpdateRequest,
+    ):
+        if payload.default_language is None and payload.default_theme is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Minimal satu setting company harus dikirim.",
+            )
+        item = self.repository.get_company(company_id)
+        if item is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Company tidak ditemukan.",
+            )
+        ensure_company_access(
+            current_user,
+            item.id,
+            detail="Company tidak berada dalam scope company user.",
+        )
+        if payload.default_language is not None:
+            item.default_language = payload.default_language
+        if payload.default_theme is not None:
+            item.default_theme = payload.default_theme
+        item.updated_by = current_user.user.id
         self.db.commit()
         self.db.refresh(item)
         return item

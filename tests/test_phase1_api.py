@@ -17,8 +17,10 @@ os.environ["APP_DEBUG"] = "false"
 os.environ["AUTO_MIGRATE_ON_STARTUP"] = "false"
 
 from hris_bpe.bootstrap.app import create_application
+from hris_bpe.common.security import hash_password
 from hris_bpe.database.base import Base
 from hris_bpe.database.session import engine, session_scope
+from hris_bpe.domains.access_control.models import User
 from hris_bpe.migrations.runner import upgrade_database
 from hris_bpe.seeds.seed import seed_reference_data
 
@@ -58,8 +60,8 @@ def test_health_and_owner_login():
 
         token, user = _login(client, "owner@bpe.co.id", "Admin123!")
         assert user["has_explicit_scope"] is False
-        assert user["preferred_language"] == "id"
-        assert user["preferred_theme"] == "theme_1"
+        assert user["preferred_language"] == "en"
+        assert user["preferred_theme"] == "theme_4"
         assert token
 
         tiers = client.get(
@@ -100,6 +102,62 @@ def test_auth_me_and_preference_update_support_language_and_theme_preferences():
         assert refreshed_me.status_code == 200
         assert refreshed_me.json()["data"]["preferred_language"] == "id"
         assert refreshed_me.json()["data"]["preferred_theme"] == "theme_5"
+
+
+def test_company_default_preferences_can_be_updated_and_auth_fallback_uses_user_company_then_system():
+    with _bootstrap_app() as client:
+        owner_login = _login_payload(client, "owner@bpe.co.id", "Admin123!")
+        owner_headers = {"Authorization": f"Bearer {owner_login['access_token']}"}
+        guard_login = _login_payload(client, "guard@bpe.co.id", "Guard123!")
+        guard_headers = {"Authorization": f"Bearer {guard_login['access_token']}"}
+
+        companies = client.get("/api/v1/organization/companies", headers=owner_headers)
+        assert companies.status_code == 200
+        company_by_code = {item["code"]: item for item in companies.json()["data"]}
+        primary_company = company_by_code["BPE-HQ"]
+        assert primary_company["default_language"] == "en"
+        assert primary_company["default_theme"] == "theme_4"
+
+        updated_settings = client.put(
+            f"/api/v1/organization/companies/{primary_company['id']}/settings",
+            headers=owner_headers,
+            json={
+                "default_language": " id ",
+                "default_theme": " THEME_5 ",
+            },
+        )
+        assert updated_settings.status_code == 200
+        assert updated_settings.json()["data"]["default_language"] == "id"
+        assert updated_settings.json()["data"]["default_theme"] == "theme_5"
+
+        owner_me = client.get("/api/v1/auth/me", headers=owner_headers)
+        assert owner_me.status_code == 200
+        assert owner_me.json()["data"]["preferred_language"] == "id"
+        assert owner_me.json()["data"]["preferred_theme"] == "theme_5"
+
+        guard_me = client.get("/api/v1/auth/me", headers=guard_headers)
+        assert guard_me.status_code == 200
+        assert guard_me.json()["data"]["preferred_language"] == "en"
+        assert guard_me.json()["data"]["preferred_theme"] == "theme_2"
+
+        with session_scope() as session:
+            session.add(
+                User(
+                    username="system.fallback",
+                    email="system.fallback@bpe.co.id",
+                    password_hash=hash_password("Fallback123!"),
+                    is_active=True,
+                )
+            )
+            session.commit()
+
+        system_fallback = _login_payload(
+            client,
+            "system.fallback@bpe.co.id",
+            "Fallback123!",
+        )
+        assert system_fallback["user"]["preferred_language"] == "id"
+        assert system_fallback["user"]["preferred_theme"] == "theme_1"
 
 
 def test_guard_can_check_in_check_out_and_owner_can_adjust_attendance():
@@ -1047,3 +1105,271 @@ def test_access_control_audit_log_records_role_and_scope_changes():
                 "scope_type": "COMPANY",
             }
         ]
+
+
+def test_core_detail_and_update_endpoints_support_basic_ui_workflow():
+    with _bootstrap_app() as client:
+        owner_token, _ = _login(client, "owner@bpe.co.id", "Admin123!")
+        owner_headers = {"Authorization": f"Bearer {owner_token}"}
+
+        employees = client.get("/api/v1/master-hr/employees", headers=owner_headers)
+        clients = client.get("/api/v1/client-contract/clients", headers=owner_headers)
+        sites = client.get("/api/v1/site-operations/sites", headers=owner_headers)
+        posts = client.get("/api/v1/site-operations/posts", headers=owner_headers)
+        deployments = client.get("/api/v1/workforce-operations/deployments", headers=owner_headers)
+        schedules = client.get("/api/v1/workforce-operations/work-schedules", headers=owner_headers)
+
+        assert employees.status_code == 200
+        assert clients.status_code == 200
+        assert sites.status_code == 200
+        assert posts.status_code == 200
+        assert deployments.status_code == 200
+        assert schedules.status_code == 200
+
+        employee = next(
+            item for item in employees.json()["data"] if item["employee_number"] == "EMP-0001"
+        )
+        client_item = next(
+            item for item in clients.json()["data"] if item["code"] == "CLI-DEMO"
+        )
+        site = next(item for item in sites.json()["data"] if item["code"] == "SITE-DEMO")
+        post = next(item for item in posts.json()["data"] if item["code"] == "POST-A")
+        deployment = next(
+            item for item in deployments.json()["data"] if item["employee_id"] == employee["id"]
+        )
+        schedule = next(
+            item for item in schedules.json()["data"] if item["employee_id"] == employee["id"]
+        )
+
+        employee_detail = client.get(
+            f"/api/v1/master-hr/employees/{employee['id']}",
+            headers=owner_headers,
+        )
+        assert employee_detail.status_code == 200
+        assert employee_detail.json()["data"]["full_name"] == "Demo Guard"
+
+        updated_employee = client.put(
+            f"/api/v1/master-hr/employees/{employee['id']}",
+            headers=owner_headers,
+            json={
+                "phone": "081299999999",
+                "address": "Jakarta Selatan",
+            },
+        )
+        assert updated_employee.status_code == 200
+        assert updated_employee.json()["data"]["phone"] == "081299999999"
+        assert updated_employee.json()["data"]["address"] == "Jakarta Selatan"
+
+        client_detail = client.get(
+            f"/api/v1/client-contract/clients/{client_item['id']}",
+            headers=owner_headers,
+        )
+        assert client_detail.status_code == 200
+        assert client_detail.json()["data"]["name"] == "Demo Client"
+
+        updated_client = client.put(
+            f"/api/v1/client-contract/clients/{client_item['id']}",
+            headers=owner_headers,
+            json={
+                "contact_person_name": "PIC Demo Updated",
+                "billing_address": "Jakarta Selatan",
+            },
+        )
+        assert updated_client.status_code == 200
+        assert updated_client.json()["data"]["contact_person_name"] == "PIC Demo Updated"
+        assert updated_client.json()["data"]["billing_address"] == "Jakarta Selatan"
+
+        site_detail = client.get(
+            f"/api/v1/site-operations/sites/{site['id']}",
+            headers=owner_headers,
+        )
+        assert site_detail.status_code == 200
+        assert site_detail.json()["data"]["name"] == "Demo Site"
+
+        updated_site = client.put(
+            f"/api/v1/site-operations/sites/{site['id']}",
+            headers=owner_headers,
+            json={
+                "city": "Jakarta Selatan",
+                "radius_meters": 175,
+            },
+        )
+        assert updated_site.status_code == 200
+        assert updated_site.json()["data"]["city"] == "Jakarta Selatan"
+        assert updated_site.json()["data"]["radius_meters"] == 175
+
+        post_detail = client.get(
+            f"/api/v1/site-operations/posts/{post['id']}",
+            headers=owner_headers,
+        )
+        assert post_detail.status_code == 200
+        assert post_detail.json()["data"]["name"] == "Main Gate"
+
+        updated_post = client.put(
+            f"/api/v1/site-operations/posts/{post['id']}",
+            headers=owner_headers,
+            json={
+                "description": "Main gate updated for UI detail testing",
+            },
+        )
+        assert updated_post.status_code == 200
+        assert (
+            updated_post.json()["data"]["description"]
+            == "Main gate updated for UI detail testing"
+        )
+
+        deployment_detail = client.get(
+            f"/api/v1/workforce-operations/deployments/{deployment['id']}",
+            headers=owner_headers,
+        )
+        assert deployment_detail.status_code == 200
+        assert deployment_detail.json()["data"]["employee_id"] == employee["id"]
+
+        updated_deployment = client.put(
+            f"/api/v1/workforce-operations/deployments/{deployment['id']}",
+            headers=owner_headers,
+            json={
+                "source_type": "manual_update",
+                "notes": "Updated deployment note for basic UI",
+            },
+        )
+        assert updated_deployment.status_code == 200
+        assert updated_deployment.json()["data"]["source_type"] == "manual_update"
+        assert (
+            updated_deployment.json()["data"]["notes"]
+            == "Updated deployment note for basic UI"
+        )
+
+        schedule_detail = client.get(
+            f"/api/v1/workforce-operations/work-schedules/{schedule['id']}",
+            headers=owner_headers,
+        )
+        assert schedule_detail.status_code == 200
+        assert schedule_detail.json()["data"]["employee_id"] == employee["id"]
+
+        updated_schedule = client.put(
+            f"/api/v1/workforce-operations/work-schedules/{schedule['id']}",
+            headers=owner_headers,
+            json={
+                "scheduled_start_datetime": f"{schedule['scheduled_date']}T08:00:00Z",
+                "scheduled_end_datetime": f"{schedule['scheduled_date']}T16:00:00Z",
+            },
+        )
+        assert updated_schedule.status_code == 200
+        assert updated_schedule.json()["data"]["scheduled_start_datetime"].startswith(
+            f"{schedule['scheduled_date']}T08:00:00"
+        )
+        assert updated_schedule.json()["data"]["scheduled_end_datetime"].startswith(
+            f"{schedule['scheduled_date']}T16:00:00"
+        )
+
+
+def test_my_schedules_exposes_guard_contract_only_for_self_and_published_schedules():
+    with _bootstrap_app() as client:
+        owner_token, _ = _login(client, "owner@bpe.co.id", "Admin123!")
+        guard_token, guard_user = _login(client, "guard@bpe.co.id", "Guard123!")
+        owner_headers = {"Authorization": f"Bearer {owner_token}"}
+        guard_headers = {"Authorization": f"Bearer {guard_token}"}
+
+        my_schedules = client.get("/api/v1/my/schedules", headers=guard_headers)
+        assert my_schedules.status_code == 200
+        assert my_schedules.json()["meta"]["total"] == 1
+        assert all(
+            item["employee_id"] == guard_user["employee_id"]
+            for item in my_schedules.json()["data"]
+        )
+
+        deployments = client.get("/api/v1/workforce-operations/deployments", headers=owner_headers)
+        shift_types = client.get("/api/v1/workforce-operations/shift-types", headers=owner_headers)
+        assert deployments.status_code == 200
+        assert shift_types.status_code == 200
+
+        guard_deployment = next(
+            item
+            for item in deployments.json()["data"]
+            if item["employee_id"] == guard_user["employee_id"]
+        )
+        draft_schedule = client.post(
+            "/api/v1/workforce-operations/work-schedules",
+            headers=owner_headers,
+            json={
+                "employee_deployment_id": guard_deployment["id"],
+                "shift_type_id": shift_types.json()["data"][0]["id"],
+                "scheduled_date": (date.today() + timedelta(days=3)).isoformat(),
+                "schedule_status": "DRAFT",
+            },
+        )
+        assert draft_schedule.status_code == 200
+
+        refreshed_my_schedules = client.get("/api/v1/my/schedules", headers=guard_headers)
+        assert refreshed_my_schedules.status_code == 200
+        my_schedule_ids = {item["id"] for item in refreshed_my_schedules.json()["data"]}
+        assert draft_schedule.json()["data"]["id"] not in my_schedule_ids
+
+        owner_my_schedules = client.get("/api/v1/my/schedules", headers=owner_headers)
+        assert owner_my_schedules.status_code == 403
+
+
+def test_detail_routes_respect_scope_and_attendance_detail_is_available():
+    with _bootstrap_app() as client:
+        owner_token, _ = _login(client, "owner@bpe.co.id", "Admin123!")
+        supervisor_token, supervisor_user = _login(
+            client, "supervisor@bpe.co.id", "Supervisor123!"
+        )
+        guard_token, _ = _login(client, "guard@bpe.co.id", "Guard123!")
+        owner_headers = {"Authorization": f"Bearer {owner_token}"}
+        supervisor_headers = {"Authorization": f"Bearer {supervisor_token}"}
+        guard_headers = {"Authorization": f"Bearer {guard_token}"}
+
+        sites = client.get("/api/v1/site-operations/sites", headers=owner_headers)
+        assert sites.status_code == 200
+        other_site = next(
+            item
+            for item in sites.json()["data"]
+            if item["id"] != supervisor_user["site_scope_ids"][0]
+        )
+
+        denied_site_detail = client.get(
+            f"/api/v1/site-operations/sites/{other_site['id']}",
+            headers=supervisor_headers,
+        )
+        assert denied_site_detail.status_code == 403
+
+        schedules = client.get("/api/v1/workforce-operations/work-schedules", headers=guard_headers)
+        assert schedules.status_code == 200
+        today_schedule = next(
+            item for item in schedules.json()["data"] if item["scheduled_date"] == date.today().isoformat()
+        )
+
+        checked_in = client.post(
+            "/api/v1/attendance/check-in",
+            headers=guard_headers,
+            json={
+                "work_schedule_id": today_schedule["id"],
+                "latitude": "-6.200000",
+                "longitude": "106.816666",
+                "method": "gps",
+            },
+        )
+        assert checked_in.status_code == 200
+
+        checked_out = client.post(
+            "/api/v1/attendance/check-out",
+            headers=guard_headers,
+            json={
+                "work_schedule_id": today_schedule["id"],
+                "latitude": "-6.200000",
+                "longitude": "106.816666",
+                "method": "gps",
+            },
+        )
+        assert checked_out.status_code == 200
+        attendance_id = checked_out.json()["data"]["id"]
+
+        attendance_detail = client.get(
+            f"/api/v1/attendance/records/{attendance_id}",
+            headers=owner_headers,
+        )
+        assert attendance_detail.status_code == 200
+        assert attendance_detail.json()["data"]["id"] == attendance_id
+        assert attendance_detail.json()["data"]["attendance_status"] == "COMPLETED"

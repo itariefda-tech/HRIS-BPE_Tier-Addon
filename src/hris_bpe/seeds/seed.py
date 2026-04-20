@@ -213,9 +213,15 @@ def seed_reference_data(session: Session) -> None:
             "address": "Jakarta",
             "phone": "021000000",
             "email": "contact@bpe.co.id",
+            "default_language": "en",
+            "default_theme": "theme_4",
             "status": "ACTIVE",
         },
     )
+    if company.default_language is None:
+        company.default_language = "en"
+    if company.default_theme is None:
+        company.default_theme = "theme_4"
     secondary_company = _get_or_create(
         session,
         Company,
@@ -227,9 +233,15 @@ def seed_reference_data(session: Session) -> None:
             "address": "Surabaya",
             "phone": "031000000",
             "email": "surabaya@bpe.co.id",
+            "default_language": "id",
+            "default_theme": "theme_3",
             "status": "ACTIVE",
         },
     )
+    if secondary_company.default_language is None:
+        secondary_company.default_language = "id"
+    if secondary_company.default_theme is None:
+        secondary_company.default_theme = "theme_3"
     branch = _get_or_create(
         session,
         Branch,

@@ -18,6 +18,18 @@ class ClientCreateRequest(BaseModel):
     status: str = "ACTIVE"
 
 
+class ClientUpdateRequest(BaseModel):
+    code: str | None = None
+    name: str | None = None
+    industry_type: str | None = None
+    contact_person_name: str | None = None
+    contact_person_phone: str | None = None
+    contact_person_email: EmailStr | None = None
+    billing_address: str | None = None
+    tax_number: str | None = None
+    status: str | None = None
+
+
 class ClientRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -69,4 +81,3 @@ class ClientContractRead(BaseModel):
     notes: str | None
     created_at: datetime
     updated_at: datetime
-

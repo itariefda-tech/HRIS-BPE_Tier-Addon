@@ -19,6 +19,18 @@ class ClientSiteCreateRequest(BaseModel):
     status: str = "ACTIVE"
 
 
+class ClientSiteUpdateRequest(BaseModel):
+    code: str | None = None
+    name: str | None = None
+    address: str | None = None
+    city: str | None = None
+    province: str | None = None
+    latitude: Decimal | None = None
+    longitude: Decimal | None = None
+    radius_meters: int | None = None
+    status: str | None = None
+
+
 class ClientSiteRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -45,6 +57,13 @@ class SitePostCreateRequest(BaseModel):
     active_flag: bool = True
 
 
+class SitePostUpdateRequest(BaseModel):
+    code: str | None = None
+    name: str | None = None
+    description: str | None = None
+    active_flag: bool | None = None
+
+
 class SitePostRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -56,4 +75,3 @@ class SitePostRead(BaseModel):
     active_flag: bool
     created_at: datetime
     updated_at: datetime
-

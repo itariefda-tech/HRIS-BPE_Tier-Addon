@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 from hris_bpe.common.dependencies import CurrentUserContext
 from hris_bpe.common.helpers import utc_now
 from hris_bpe.common.scope import ensure_company_access, filter_items_by_company_scope, has_unscoped_permission
+from hris_bpe.domains.attendance.models import AttendanceRecord
 from hris_bpe.domains.client_contract.models import Client, ClientContract
 from hris_bpe.domains.master_hr.models import Employee
+from hris_bpe.domains.organization.models import Position
 from hris_bpe.domains.site_operations.models import ClientSite, SitePost
 from hris_bpe.domains.workforce_operations.models import (
     DeploymentHistory,
@@ -22,8 +24,10 @@ from hris_bpe.domains.workforce_operations.schemas import (
     BulkScheduleGenerateRequest,
     EndDeploymentRequest,
     EmployeeDeploymentCreateRequest,
+    EmployeeDeploymentUpdateRequest,
     ShiftTypeCreateRequest,
     WorkScheduleCreateRequest,
+    WorkScheduleUpdateRequest,
 )
 
 
@@ -58,8 +62,30 @@ class WorkforceOperationsService:
             items = [item for item in items if item.employee_id == current_user.user.employee_id]
         return items
 
+    def _get_accessible_deployment(
+        self, current_user: CurrentUserContext, deployment_id: int
+    ) -> EmployeeDeployment:
+        deployment = self.repository.get_deployment(deployment_id)
+        if deployment is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deployment tidak ditemukan.",
+            )
+        allowed_deployment_ids = {item.id for item in self.list_deployments(current_user)}
+        if deployment.id not in allowed_deployment_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Deployment tidak berada dalam scope user.",
+            )
+        return deployment
+
     def list_deployments(self, current_user: CurrentUserContext):
         return self._filter_deployments(current_user, self.repository.list_deployments())
+
+    def get_deployment_detail(
+        self, current_user: CurrentUserContext, deployment_id: int
+    ) -> EmployeeDeployment:
+        return self._get_accessible_deployment(current_user, deployment_id)
 
     def list_deployment_histories(self, current_user: CurrentUserContext):
         allowed_deployment_ids = {item.id for item in self.list_deployments(current_user)}
@@ -145,6 +171,112 @@ class WorkforceOperationsService:
         self.db.refresh(item)
         return item
 
+    def update_deployment(
+        self,
+        current_user: CurrentUserContext,
+        deployment_id: int,
+        payload: EmployeeDeploymentUpdateRequest,
+    ) -> EmployeeDeployment:
+        deployment = self._get_accessible_deployment(current_user, deployment_id)
+        changes = payload.model_dump(exclude_unset=True)
+        if not changes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Payload update deployment kosong.",
+            )
+
+        employee = self.db.get(Employee, deployment.employee_id)
+        client = self.db.get(Client, deployment.client_id)
+        if employee is None or client is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Referensi deployment tidak valid.",
+            )
+        ensure_company_access(
+            current_user,
+            employee.company_id,
+            detail="Deployment tidak berada dalam scope company user.",
+        )
+        if current_user.site_scope_ids:
+            target_site_id = changes.get("client_site_id", deployment.client_site_id)
+            if target_site_id not in current_user.site_scope_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Site deployment tidak berada dalam scope user.",
+                )
+        if current_user.branch_scope_ids and employee.branch_id not in current_user.branch_scope_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Employee deployment tidak berada dalam scope branch user.",
+            )
+
+        target_contract_id = changes.get("client_contract_id", deployment.client_contract_id)
+        target_site_id = changes.get("client_site_id", deployment.client_site_id)
+        target_post_id = changes.get("site_post_id", deployment.site_post_id)
+        target_position_id = changes.get("position_id", deployment.position_id)
+
+        contract = self.db.get(ClientContract, target_contract_id)
+        site = self.db.get(ClientSite, target_site_id)
+        post = self.db.get(SitePost, target_post_id) if target_post_id is not None else None
+        position = self.db.get(Position, target_position_id) if target_position_id is not None else None
+
+        if contract is None or site is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Referensi deployment tidak lengkap atau tidak ditemukan.",
+            )
+        if contract.client_id != client.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Client contract tidak cocok dengan client deployment.",
+            )
+        if site.client_id != client.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Client site tidak cocok dengan client deployment.",
+            )
+        if post is not None and post.client_site_id != site.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Site post tidak cocok dengan client site deployment.",
+            )
+        if position is not None and position.company_id != employee.company_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Position deployment tidak valid untuk company employee.",
+            )
+
+        site_changed = (
+            target_site_id != deployment.client_site_id
+            or target_post_id != deployment.site_post_id
+        )
+        old_client_site_id = deployment.client_site_id
+        old_site_post_id = deployment.site_post_id
+
+        for field_name, value in changes.items():
+            setattr(deployment, field_name, value)
+        deployment.updated_by = current_user.user.id
+
+        if site_changed:
+            self.repository.create_deployment_history(
+                DeploymentHistory(
+                    employee_deployment_id=deployment.id,
+                    action_type="UPDATE",
+                    old_client_site_id=old_client_site_id,
+                    new_client_site_id=target_site_id,
+                    old_site_post_id=old_site_post_id,
+                    new_site_post_id=target_post_id,
+                    action_date=utc_now().date(),
+                    remarks=changes.get("notes", deployment.notes),
+                    created_by=current_user.user.id,
+                    created_at=utc_now(),
+                )
+            )
+
+        self.db.commit()
+        self.db.refresh(deployment)
+        return deployment
+
     @staticmethod
     def _normalize_schedule_status_for_creation(schedule_status: str) -> str:
         normalized = schedule_status.strip().upper()
@@ -201,6 +333,41 @@ class WorkforceOperationsService:
         if current_user.user.employee_id is not None and "schedules.manage" not in current_user.permission_codes:
             items = [item for item in items if item.employee_id == current_user.user.employee_id]
         return items
+
+    def _get_accessible_work_schedule(
+        self, current_user: CurrentUserContext, schedule_id: int
+    ) -> WorkSchedule:
+        schedule = self.repository.get_work_schedule(schedule_id)
+        if schedule is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Work schedule tidak ditemukan.",
+            )
+        allowed_schedule_ids = {item.id for item in self.list_work_schedules(current_user)}
+        if schedule.id not in allowed_schedule_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Work schedule tidak berada dalam scope user.",
+            )
+        return schedule
+
+    def get_work_schedule_detail(
+        self, current_user: CurrentUserContext, schedule_id: int
+    ) -> WorkSchedule:
+        return self._get_accessible_work_schedule(current_user, schedule_id)
+
+    def list_my_schedules(self, current_user: CurrentUserContext) -> list[WorkSchedule]:
+        if current_user.user.employee_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User tidak memiliki relasi employee untuk my schedules.",
+            )
+        return [
+            item
+            for item in self.list_work_schedules(current_user)
+            if item.employee_id == current_user.user.employee_id
+            and item.schedule_status in {"PUBLISHED", "APPROVED"}
+        ]
 
     def create_work_schedule(
         self,
@@ -269,6 +436,109 @@ class WorkforceOperationsService:
         self.db.refresh(item)
         return item
 
+    def update_work_schedule(
+        self,
+        current_user: CurrentUserContext,
+        schedule_id: int,
+        payload: WorkScheduleUpdateRequest,
+    ) -> WorkSchedule:
+        schedule = self._get_accessible_work_schedule(current_user, schedule_id)
+        changes = payload.model_dump(exclude_unset=True)
+        if not changes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Payload update work schedule kosong.",
+            )
+        if schedule.schedule_status == "APPROVED":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Work schedule APPROVED tidak boleh diubah.",
+            )
+        existing_attendance = self.db.query(AttendanceRecord).filter(
+            AttendanceRecord.work_schedule_id == schedule.id
+        ).first()
+        if existing_attendance is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Work schedule yang sudah memiliki attendance tidak boleh diubah.",
+            )
+
+        target_shift_type_id = changes.get("shift_type_id", schedule.shift_type_id)
+        target_date = changes.get("scheduled_date", schedule.scheduled_date)
+        shift_type = self.repository.get_shift_type(target_shift_type_id)
+        if shift_type is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Shift type tidak ditemukan.",
+            )
+
+        employee = self.db.get(Employee, schedule.employee_id)
+        if employee is not None:
+            ensure_company_access(
+                current_user,
+                employee.company_id,
+                detail="Work schedule tidak berada dalam scope company user.",
+            )
+            if shift_type.company_id != employee.company_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Shift type tidak valid untuk company work schedule.",
+                )
+
+        replacement_for_schedule_id = changes.get(
+            "replacement_for_schedule_id",
+            schedule.replacement_for_schedule_id,
+        )
+        if replacement_for_schedule_id is not None:
+            replacement_schedule = self._get_accessible_work_schedule(
+                current_user,
+                replacement_for_schedule_id,
+            )
+            if replacement_schedule.id == schedule.id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Replacement schedule tidak boleh menunjuk dirinya sendiri.",
+                )
+
+        if "scheduled_start_datetime" in changes:
+            target_start_datetime = changes["scheduled_start_datetime"]
+        elif "shift_type_id" in changes or "scheduled_date" in changes:
+            target_start_datetime = datetime.combine(
+                target_date,
+                shift_type.start_time,
+                tzinfo=timezone.utc,
+            )
+        else:
+            target_start_datetime = schedule.scheduled_start_datetime
+
+        if "scheduled_end_datetime" in changes:
+            target_end_datetime = changes["scheduled_end_datetime"]
+        elif "shift_type_id" in changes or "scheduled_date" in changes:
+            end_date = target_date + timedelta(days=1) if shift_type.cross_day_flag else target_date
+            target_end_datetime = datetime.combine(
+                end_date,
+                shift_type.end_time,
+                tzinfo=timezone.utc,
+            )
+        else:
+            target_end_datetime = schedule.scheduled_end_datetime
+
+        if target_start_datetime >= target_end_datetime:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Scheduled end datetime harus lebih besar dari scheduled start datetime.",
+            )
+
+        schedule.shift_type_id = target_shift_type_id
+        schedule.scheduled_date = target_date
+        schedule.scheduled_start_datetime = target_start_datetime
+        schedule.scheduled_end_datetime = target_end_datetime
+        schedule.replacement_for_schedule_id = replacement_for_schedule_id
+        schedule.updated_by = current_user.user.id
+        self.db.commit()
+        self.db.refresh(schedule)
+        return schedule
+
     def generate_bulk_schedules(
         self,
         current_user: CurrentUserContext,
@@ -321,18 +591,7 @@ class WorkforceOperationsService:
     def publish_work_schedule(
         self, current_user: CurrentUserContext, schedule_id: int
     ) -> WorkSchedule:
-        schedule = self.repository.get_work_schedule(schedule_id)
-        if schedule is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Work schedule tidak ditemukan.",
-            )
-        allowed_schedule_ids = {item.id for item in self.list_work_schedules(current_user)}
-        if schedule.id not in allowed_schedule_ids:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Work schedule tidak berada dalam scope user.",
-            )
+        schedule = self._get_accessible_work_schedule(current_user, schedule_id)
         if schedule.schedule_status != "DRAFT":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -347,18 +606,7 @@ class WorkforceOperationsService:
     def approve_work_schedule(
         self, current_user: CurrentUserContext, schedule_id: int
     ) -> WorkSchedule:
-        schedule = self.repository.get_work_schedule(schedule_id)
-        if schedule is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Work schedule tidak ditemukan.",
-            )
-        allowed_schedule_ids = {item.id for item in self.list_work_schedules(current_user)}
-        if schedule.id not in allowed_schedule_ids:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Work schedule tidak berada dalam scope user.",
-            )
+        schedule = self._get_accessible_work_schedule(current_user, schedule_id)
         if schedule.schedule_status != "PUBLISHED":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -377,18 +625,7 @@ class WorkforceOperationsService:
         deployment_id: int,
         payload: EndDeploymentRequest,
     ) -> EmployeeDeployment:
-        deployment = self.repository.get_deployment(deployment_id)
-        if deployment is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Deployment tidak ditemukan.",
-            )
-        allowed_deployment_ids = {item.id for item in self.list_deployments(current_user)}
-        if deployment.id not in allowed_deployment_ids:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Deployment tidak berada dalam scope user.",
-            )
+        deployment = self._get_accessible_deployment(current_user, deployment_id)
         deployment.end_date = payload.end_date
         deployment.deployment_status = "ENDED"
         if payload.notes:
