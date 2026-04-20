@@ -31,8 +31,12 @@ def test_phase2_migration_adds_audit_columns_indexes_and_revision_history():
 
     work_schedule_columns = {column["name"] for column in inspector.get_columns("work_schedules")}
     employee_columns = {column["name"] for column in inspector.get_columns("employees")}
+    user_columns = {column["name"] for column in inspector.get_columns("users")}
     lifecycle_columns = {
         column["name"] for column in inspector.get_columns("employee_lifecycle_events")
+    }
+    qr_session_columns = {
+        column["name"] for column in inspector.get_columns("attendance_qr_sessions")
     }
     subscription_columns = {
         column["name"] for column in inspector.get_columns("company_subscriptions")
@@ -40,7 +44,9 @@ def test_phase2_migration_adds_audit_columns_indexes_and_revision_history():
 
     assert {"created_by", "updated_by", "version_no"} <= work_schedule_columns
     assert {"created_by", "updated_by", "version_no"} <= employee_columns
+    assert {"preferred_language", "preferred_theme"} <= user_columns
     assert {"created_by", "updated_by", "version_no"} <= lifecycle_columns
+    assert {"token_hash", "attendance_action", "expires_at"} <= qr_session_columns
     assert {"created_by", "updated_by", "version_no"} <= subscription_columns
 
     work_schedule_indexes = {
@@ -55,10 +61,14 @@ def test_phase2_migration_adds_audit_columns_indexes_and_revision_history():
     lifecycle_indexes = {
         index["name"] for index in inspector.get_indexes("employee_lifecycle_events")
     }
+    qr_session_indexes = {
+        index["name"] for index in inspector.get_indexes("attendance_qr_sessions")
+    }
 
     assert "ix_work_schedules_site_date_status" in work_schedule_indexes
     assert "ix_work_schedules_deployment_date" in work_schedule_indexes
     assert "ix_attendance_records_site_date_status" in attendance_indexes
+    assert "ix_attendance_qr_sessions_schedule_action_status" in qr_session_indexes
     assert "ux_employees_company_employee_number" in employee_indexes
     assert employee_indexes["ux_employees_company_employee_number"]["unique"] == 1
     assert employee_indexes["ux_employees_company_employee_number"]["column_names"] == [
@@ -80,6 +90,8 @@ def test_phase2_migration_adds_audit_columns_indexes_and_revision_history():
         "0005_phase3_auth_access_control",
         "0006_phase4_company_unique_hardening",
         "0007_phase4_master_hr_lifecycle",
+        "0008_phase5_attendance_channels",
+        "0009_phase3_user_preferences",
     }
     assert expected_revisions.issubset(revisions)
 

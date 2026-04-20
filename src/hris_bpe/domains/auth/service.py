@@ -27,10 +27,16 @@ from hris_bpe.domains.auth.schemas import (
     LogoutResponse,
     RefreshTokenRequest,
     RefreshTokenResponse,
+    UserPreferenceUpdateRequest,
 )
 
 
 class AuthService:
+    SYSTEM_DEFAULT_LANGUAGE = "id"
+    SYSTEM_DEFAULT_THEME = "theme_1"
+    ALLOWED_LANGUAGES = {"id", "en"}
+    ALLOWED_THEMES = {"theme_1", "theme_2", "theme_3", "theme_4", "theme_5"}
+
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repository = AuthRepository(db)
@@ -54,6 +60,8 @@ class AuthService:
             username=user.username,
             email=user.email,
             phone=user.phone,
+            preferred_language=self._resolve_preferred_language(user),
+            preferred_theme=self._resolve_preferred_theme(user),
             is_active=user.is_active,
             last_login_at=user.last_login_at,
             role_codes=[role.code for role in roles],
@@ -76,6 +84,20 @@ class AuthService:
             ),
             has_explicit_scope=len(scopes) > 0,
         )
+
+    @classmethod
+    def _resolve_preferred_language(cls, user) -> str:
+        value = (user.preferred_language or "").strip().lower()
+        if value in cls.ALLOWED_LANGUAGES:
+            return value
+        return cls.SYSTEM_DEFAULT_LANGUAGE
+
+    @classmethod
+    def _resolve_preferred_theme(cls, user) -> str:
+        value = (user.preferred_theme or "").strip().lower()
+        if value in cls.ALLOWED_THEMES:
+            return value
+        return cls.SYSTEM_DEFAULT_THEME
 
     @staticmethod
     def _generate_session_id() -> str:
@@ -225,6 +247,25 @@ class AuthService:
                 detail="Password saat ini tidak sesuai.",
             )
         current_user.user.password_hash = hash_password(payload.new_password)
+        current_user.user.updated_by = current_user.user.id
+        self.db.commit()
+        self.db.refresh(current_user.user)
+        return self.me(current_user)
+
+    def update_preferences(
+        self,
+        current_user: CurrentUserContext,
+        payload: UserPreferenceUpdateRequest,
+    ) -> AuthenticatedUser:
+        if payload.preferred_language is None and payload.preferred_theme is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Minimal satu preferensi harus dikirim.",
+            )
+        if payload.preferred_language is not None:
+            current_user.user.preferred_language = payload.preferred_language
+        if payload.preferred_theme is not None:
+            current_user.user.preferred_theme = payload.preferred_theme
         current_user.user.updated_by = current_user.user.id
         self.db.commit()
         self.db.refresh(current_user.user)

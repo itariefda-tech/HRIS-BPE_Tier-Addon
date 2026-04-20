@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
+
+
+PreferredLanguage = Literal["id", "en"]
+PreferredTheme = Literal["theme_1", "theme_2", "theme_3", "theme_4", "theme_5"]
 
 
 class LoginRequest(BaseModel):
@@ -15,6 +20,11 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+class UserPreferenceUpdateRequest(BaseModel):
+    preferred_language: PreferredLanguage | None = None
+    preferred_theme: PreferredTheme | None = None
+
+
 class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(min_length=32)
 
@@ -25,6 +35,8 @@ class AuthenticatedUser(BaseModel):
     username: str
     email: EmailStr
     phone: str | None
+    preferred_language: PreferredLanguage
+    preferred_theme: PreferredTheme
     is_active: bool
     last_login_at: datetime | None
     role_codes: list[str]

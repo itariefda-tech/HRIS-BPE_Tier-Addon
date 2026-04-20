@@ -24,6 +24,8 @@ class User(Base, PrimaryKeyMixin, TimestampMixin, AuditActorMixin, VersionedMixi
     email: Mapped[str] = mapped_column(String(150), unique=True, index=True)
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    preferred_language: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    preferred_theme: Mapped[str | None] = mapped_column(String(40), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

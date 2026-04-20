@@ -58,6 +58,8 @@ def test_health_and_owner_login():
 
         token, user = _login(client, "owner@bpe.co.id", "Admin123!")
         assert user["has_explicit_scope"] is False
+        assert user["preferred_language"] == "id"
+        assert user["preferred_theme"] == "theme_1"
         assert token
 
         tiers = client.get(
@@ -66,6 +68,38 @@ def test_health_and_owner_login():
         )
         assert tiers.status_code == 200
         assert len(tiers.json()["data"]) >= 3
+
+
+def test_auth_me_and_preference_update_support_language_and_theme_preferences():
+    with _bootstrap_app() as client:
+        login_payload = _login_payload(client, "guard@bpe.co.id", "Guard123!")
+        access_token = login_payload["access_token"]
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        assert login_payload["user"]["preferred_language"] == "en"
+        assert login_payload["user"]["preferred_theme"] == "theme_2"
+
+        me = client.get("/api/v1/auth/me", headers=headers)
+        assert me.status_code == 200
+        assert me.json()["data"]["preferred_language"] == "en"
+        assert me.json()["data"]["preferred_theme"] == "theme_2"
+
+        updated = client.put(
+            "/api/v1/auth/preferences",
+            headers=headers,
+            json={
+                "preferred_language": "id",
+                "preferred_theme": "theme_5",
+            },
+        )
+        assert updated.status_code == 200
+        assert updated.json()["data"]["preferred_language"] == "id"
+        assert updated.json()["data"]["preferred_theme"] == "theme_5"
+
+        refreshed_me = client.get("/api/v1/auth/me", headers=headers)
+        assert refreshed_me.status_code == 200
+        assert refreshed_me.json()["data"]["preferred_language"] == "id"
+        assert refreshed_me.json()["data"]["preferred_theme"] == "theme_5"
 
 
 def test_guard_can_check_in_check_out_and_owner_can_adjust_attendance():
@@ -130,6 +164,44 @@ def test_guard_can_check_in_check_out_and_owner_can_adjust_attendance():
         assert adjusted["working_minutes"] == 485
         assert adjusted["overtime_minutes"] == 5
         assert adjusted["remarks"] == "Supervisor correction"
+
+
+def test_selfie_validation_service_enforces_image_like_photo_for_selfie_method():
+    with _bootstrap_app() as client:
+        guard_token, _ = _login(client, "guard@bpe.co.id", "Guard123!")
+        guard_headers = {"Authorization": f"Bearer {guard_token}"}
+
+        schedules = client.get("/api/v1/workforce-operations/work-schedules", headers=guard_headers)
+        assert schedules.status_code == 200
+        schedule = schedules.json()["data"][0]
+
+        invalid_selfie = client.post(
+            "/api/v1/attendance/check-in",
+            headers=guard_headers,
+            json={
+                "work_schedule_id": schedule["id"],
+                "latitude": "-6.200000",
+                "longitude": "106.816666",
+                "method": "gps_selfie",
+                "photo_path": "attendance/selfie/emp-0001.txt",
+            },
+        )
+        assert invalid_selfie.status_code == 400
+
+        valid_selfie = client.post(
+            "/api/v1/attendance/check-in",
+            headers=guard_headers,
+            json={
+                "work_schedule_id": schedule["id"],
+                "latitude": "-6.200000",
+                "longitude": "106.816666",
+                "method": "gps_selfie",
+                "photo_path": "attendance/selfie/emp-0001-check-in.jpg",
+            },
+        )
+        assert valid_selfie.status_code == 200
+        assert valid_selfie.json()["data"]["check_in_method"] == "gps_selfie"
+        assert valid_selfie.json()["data"]["face_valid_flag"] is True
 
 
 def test_company_scoped_user_only_sees_first_company_scope():
@@ -310,6 +382,80 @@ def test_attendance_exception_workflow_is_separate_from_manual_adjustment():
         assert owner_exceptions.json()["meta"]["total"] == 1
 
 
+def test_qr_attendance_uses_separate_session_and_endpoint():
+    with _bootstrap_app() as client:
+        guard_token, _ = _login(client, "guard@bpe.co.id", "Guard123!")
+        owner_token, _ = _login(client, "owner@bpe.co.id", "Admin123!")
+        guard_headers = {"Authorization": f"Bearer {guard_token}"}
+        owner_headers = {"Authorization": f"Bearer {owner_token}"}
+
+        schedules = client.get("/api/v1/workforce-operations/work-schedules", headers=guard_headers)
+        assert schedules.status_code == 200
+        schedule = schedules.json()["data"][0]
+
+        direct_qr = client.post(
+            "/api/v1/attendance/check-in",
+            headers=guard_headers,
+            json={
+                "work_schedule_id": schedule["id"],
+                "method": "qr",
+            },
+        )
+        assert direct_qr.status_code == 400
+
+        qr_check_in_session = client.post(
+            "/api/v1/attendance/qr-sessions",
+            headers=owner_headers,
+            json={
+                "work_schedule_id": schedule["id"],
+                "attendance_action": "CHECK_IN",
+                "expires_in_minutes": 10,
+            },
+        )
+        assert qr_check_in_session.status_code == 200
+        qr_check_in_token = qr_check_in_session.json()["data"]["qr_token"]
+        assert qr_check_in_session.json()["data"]["attendance_action"] == "CHECK_IN"
+
+        qr_check_in = client.post(
+            "/api/v1/attendance/check-in/qr",
+            headers=guard_headers,
+            json={
+                "qr_token": qr_check_in_token,
+                "photo_path": "attendance/qr/emp-0001-check-in.png",
+            },
+        )
+        assert qr_check_in.status_code == 200
+        assert qr_check_in.json()["data"]["check_in_method"] == "qr_selfie"
+        assert qr_check_in.json()["data"]["face_valid_flag"] is True
+
+        reused_qr_check_in = client.post(
+            "/api/v1/attendance/check-in/qr",
+            headers=guard_headers,
+            json={"qr_token": qr_check_in_token},
+        )
+        assert reused_qr_check_in.status_code == 409
+
+        qr_check_out_session = client.post(
+            "/api/v1/attendance/qr-sessions",
+            headers=owner_headers,
+            json={
+                "work_schedule_id": schedule["id"],
+                "attendance_action": "CHECK_OUT",
+                "expires_in_minutes": 10,
+            },
+        )
+        assert qr_check_out_session.status_code == 200
+
+        qr_check_out = client.post(
+            "/api/v1/attendance/check-out/qr",
+            headers=guard_headers,
+            json={"qr_token": qr_check_out_session.json()["data"]["qr_token"]},
+        )
+        assert qr_check_out.status_code == 200
+        assert qr_check_out.json()["data"]["check_out_method"] == "qr"
+        assert qr_check_out.json()["data"]["attendance_status"] == "COMPLETED"
+
+
 def test_site_scoped_supervisor_only_sees_and_writes_inside_site_scope():
     with _bootstrap_app() as client:
         owner_token, _ = _login(client, "owner@bpe.co.id", "Admin123!")
@@ -376,6 +522,110 @@ def test_site_scoped_supervisor_only_sees_and_writes_inside_site_scope():
         assert generate.status_code == 200
         assert generate.json()["meta"]["total"] == 1
         assert generate.json()["data"][0]["client_site_id"] == site_scope_id
+
+
+def test_dashboard_reports_and_ops_summary_follow_site_scope_for_supervisor():
+    with _bootstrap_app() as client:
+        owner_token, _ = _login(client, "owner@bpe.co.id", "Admin123!")
+        supervisor_token, supervisor_user = _login(
+            client, "supervisor@bpe.co.id", "Supervisor123!"
+        )
+        guard_token, _ = _login(client, "guard@bpe.co.id", "Guard123!")
+        owner_headers = {"Authorization": f"Bearer {owner_token}"}
+        supervisor_headers = {"Authorization": f"Bearer {supervisor_token}"}
+        guard_headers = {"Authorization": f"Bearer {guard_token}"}
+
+        schedules = client.get("/api/v1/workforce-operations/work-schedules", headers=guard_headers)
+        assert schedules.status_code == 200
+        today_schedule = next(
+            item for item in schedules.json()["data"] if item["scheduled_date"] == date.today().isoformat()
+        )
+
+        check_in = client.post(
+            "/api/v1/attendance/check-in",
+            headers=guard_headers,
+            json={
+                "work_schedule_id": today_schedule["id"],
+                "latitude": "-6.200000",
+                "longitude": "106.816666",
+                "method": "gps_selfie",
+                "photo_path": "attendance/selfie/emp-0001-check-in.jpg",
+            },
+        )
+        assert check_in.status_code == 200
+
+        owner_summary = client.get("/api/v1/dashboard/ops-summary", headers=owner_headers)
+        supervisor_summary = client.get("/api/v1/dashboard/ops-summary", headers=supervisor_headers)
+        assert owner_summary.status_code == 200
+        assert supervisor_summary.status_code == 200
+
+        assert owner_summary.json()["data"] == {
+            "employees_total": 4,
+            "clients_total": 2,
+            "sites_total": 2,
+            "active_deployments": 2,
+            "schedules_today": 2,
+            "attendance_today": 1,
+        }
+        assert supervisor_summary.json()["data"] == {
+            "employees_total": 1,
+            "clients_total": 1,
+            "sites_total": 1,
+            "active_deployments": 1,
+            "schedules_today": 1,
+            "attendance_today": 1,
+        }
+
+        employee_report = client.get(
+            "/api/v1/dashboard/reports/employees",
+            headers=supervisor_headers,
+        )
+        assert employee_report.status_code == 200
+        assert employee_report.json()["data"]["total_employees"] == 1
+        assert employee_report.json()["data"]["active_employees"] == 1
+        assert employee_report.json()["data"]["by_branch"][0]["branch_name"] == "Head Office"
+        assert employee_report.json()["data"]["by_branch"][0]["total"] == 1
+
+        deployment_report = client.get(
+            "/api/v1/dashboard/reports/deployments",
+            headers=supervisor_headers,
+        )
+        assert deployment_report.status_code == 200
+        assert deployment_report.json()["data"]["total_deployments"] == 1
+        assert deployment_report.json()["data"]["active_deployments"] == 1
+        assert deployment_report.json()["data"]["by_site"] == [
+            {
+                "client_site_id": supervisor_user["site_scope_ids"][0],
+                "site_name": "Demo Site",
+                "total": 1,
+            }
+        ]
+
+        schedule_report = client.get(
+            f"/api/v1/dashboard/reports/schedules?date_from={date.today().isoformat()}&date_to={date.today().isoformat()}",
+            headers=supervisor_headers,
+        )
+        assert schedule_report.status_code == 200
+        assert schedule_report.json()["data"]["total_schedules"] == 1
+        assert schedule_report.json()["data"]["published_schedules"] == 1
+        assert schedule_report.json()["data"]["approved_schedules"] == 0
+
+        attendance_report = client.get(
+            f"/api/v1/dashboard/reports/attendance?date_from={date.today().isoformat()}&date_to={date.today().isoformat()}",
+            headers=supervisor_headers,
+        )
+        assert attendance_report.status_code == 200
+        assert attendance_report.json()["data"]["total_attendance"] == 1
+        assert attendance_report.json()["data"]["gps_valid_total"] == 1
+        assert attendance_report.json()["data"]["geofence_valid_total"] == 1
+        assert attendance_report.json()["data"]["face_valid_total"] == 1
+        assert attendance_report.json()["data"]["by_site"] == [
+            {
+                "client_site_id": supervisor_user["site_scope_ids"][0],
+                "site_name": "Demo Site",
+                "total": 1,
+            }
+        ]
 
 
 def test_branch_scoped_hr_only_sees_employees_inside_branch_scope():

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AttendanceCheckRequest(BaseModel):
@@ -90,3 +90,34 @@ class AttendanceExceptionRead(BaseModel):
     resolved_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class AttendanceQrSessionCreateRequest(BaseModel):
+    work_schedule_id: int
+    attendance_action: str
+    expires_in_minutes: int = Field(default=5, ge=1, le=60)
+    remarks: str | None = None
+
+
+class AttendanceQrConsumeRequest(BaseModel):
+    qr_token: str
+    photo_path: str | None = None
+    remarks: str | None = None
+
+
+class AttendanceQrSessionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    work_schedule_id: int
+    attendance_action: str
+    expires_at: datetime
+    consumed_at: datetime | None
+    consumed_by: int | None
+    remarks: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AttendanceQrSessionIssuedRead(AttendanceQrSessionRead):
+    qr_token: str

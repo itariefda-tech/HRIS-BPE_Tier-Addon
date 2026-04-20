@@ -507,6 +507,8 @@ def seed_reference_data(session: Session) -> None:
             "username": "demo.guard",
             "phone": guard_employee.phone,
             "password_hash": hash_password(settings.seed_guard_password),
+            "preferred_language": "en",
+            "preferred_theme": "theme_2",
             "is_active": True,
         },
     )

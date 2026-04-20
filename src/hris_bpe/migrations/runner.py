@@ -187,6 +187,21 @@ def _apply_phase4_company_unique_hardening(connection: Connection) -> None:
         )
 
 
+def _apply_phase3_user_preferences(connection: Connection) -> None:
+    _ensure_column(
+        connection,
+        "users",
+        "preferred_language",
+        "preferred_language VARCHAR(10)",
+    )
+    _ensure_column(
+        connection,
+        "users",
+        "preferred_theme",
+        "preferred_theme VARCHAR(40)",
+    )
+
+
 MIGRATIONS = [
     MigrationStep("0001_base_schema", _noop),
     MigrationStep("0002_phase1_foundation", _noop),
@@ -195,6 +210,8 @@ MIGRATIONS = [
     MigrationStep("0005_phase3_auth_access_control", _apply_phase3_auth_access_control),
     MigrationStep("0006_phase4_company_unique_hardening", _apply_phase4_company_unique_hardening),
     MigrationStep("0007_phase4_master_hr_lifecycle", _noop),
+    MigrationStep("0008_phase5_attendance_channels", _noop),
+    MigrationStep("0009_phase3_user_preferences", _apply_phase3_user_preferences),
 ]
 
 

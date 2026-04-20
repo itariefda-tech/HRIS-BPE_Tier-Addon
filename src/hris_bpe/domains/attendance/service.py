@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from secrets import token_urlsafe
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -12,10 +13,11 @@ from hris_bpe.common.scope import (
     filter_items_by_company_scope,
     has_unscoped_permission,
 )
-from hris_bpe.common.security import haversine_distance_meters
+from hris_bpe.common.security import hash_token, haversine_distance_meters
 from hris_bpe.domains.attendance.models import (
     AttendanceException,
     AttendanceManualAdjustment,
+    AttendanceQrSession,
     AttendanceRecord,
 )
 from hris_bpe.domains.attendance.repository import AttendanceRepository
@@ -24,22 +26,33 @@ from hris_bpe.domains.attendance.schemas import (
     AttendanceExceptionCreateRequest,
     AttendanceExceptionResolveRequest,
     AttendanceManualAdjustmentCreateRequest,
+    AttendanceQrConsumeRequest,
+    AttendanceQrSessionCreateRequest,
 )
+from hris_bpe.domains.attendance.selfie_validation import SelfieValidationService
 from hris_bpe.domains.master_hr.models import Employee
 from hris_bpe.domains.site_operations.models import ClientSite
 from hris_bpe.domains.workforce_operations.models import ShiftType, WorkSchedule
 
 
 class AttendanceService:
+    _allowed_methods = {"gps", "gps_selfie", "qr", "qr_selfie"}
+
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repository = AttendanceRepository(db)
+        self.selfie_validation_service = SelfieValidationService()
 
     @staticmethod
     def _as_utc(value: datetime) -> datetime:
         if value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
+
+    @staticmethod
+    def _normalize_method(method: str | None) -> str:
+        normalized = (method or "gps").strip().lower().replace("-", "_")
+        return normalized or "gps"
 
     def list_records(self, current_user: CurrentUserContext):
         employee_company_map = {
@@ -140,7 +153,50 @@ class AttendanceService:
         )
         return True, distance.within_radius
 
-    def check_in(self, current_user: CurrentUserContext, payload: AttendanceCheckRequest):
+    def _validate_method_and_selfie(
+        self,
+        *,
+        schedule: WorkSchedule,
+        payload: AttendanceCheckRequest,
+        allow_qr_method: bool,
+    ) -> tuple[str, bool]:
+        method = self._normalize_method(payload.method)
+        if method not in self._allowed_methods:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Metode attendance tidak dikenal.",
+            )
+        if method.startswith("qr") and not allow_qr_method:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Gunakan endpoint QR attendance terpisah.",
+            )
+        if method.startswith("gps") and (
+            payload.latitude is None or payload.longitude is None
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Latitude dan longitude wajib untuk metode GPS.",
+            )
+        selfie_validation = self.selfie_validation_service.validate(
+            photo_path=payload.photo_path,
+            method=method,
+        )
+        if selfie_validation.checked and not selfie_validation.is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=selfie_validation.message or "Validasi selfie attendance gagal.",
+            )
+        return method, selfie_validation.is_valid
+
+    def _process_check_in(
+        self,
+        current_user: CurrentUserContext,
+        payload: AttendanceCheckRequest,
+        *,
+        allow_qr_method: bool,
+        auto_commit: bool,
+    ) -> AttendanceRecord:
         schedule = self._load_schedule(payload.work_schedule_id)
         self._ensure_schedule_access(current_user, schedule)
         if schedule.schedule_status not in {"PUBLISHED", "APPROVED"}:
@@ -148,13 +204,11 @@ class AttendanceService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Schedule belum dipublish untuk presensi.",
             )
-        if payload.method.startswith("gps") and (
-            payload.latitude is None or payload.longitude is None
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Latitude dan longitude wajib untuk metode GPS.",
-            )
+        method, selfie_valid = self._validate_method_and_selfie(
+            schedule=schedule,
+            payload=payload,
+            allow_qr_method=allow_qr_method,
+        )
         existing = self.repository.get_by_schedule_id(schedule.id)
         if existing is not None and existing.check_in_datetime is not None:
             raise HTTPException(
@@ -184,21 +238,29 @@ class AttendanceService:
         record.check_in_latitude = payload.latitude
         record.check_in_longitude = payload.longitude
         record.check_in_photo_path = payload.photo_path
-        record.check_in_method = payload.method
+        record.check_in_method = method
         record.gps_valid_flag = gps_flag
         record.geofence_valid_flag = geofence_flag
-        record.face_valid_flag = payload.photo_path is not None
+        record.face_valid_flag = selfie_valid
         record.attendance_status = attendance_status
         record.minutes_late = minutes_late
         record.remarks = payload.remarks
         record.updated_by = current_user.user.id
         if existing is None:
             self.repository.create(record)
-        self.db.commit()
-        self.db.refresh(record)
+        if auto_commit:
+            self.db.commit()
+            self.db.refresh(record)
         return record
 
-    def check_out(self, current_user: CurrentUserContext, payload: AttendanceCheckRequest):
+    def _process_check_out(
+        self,
+        current_user: CurrentUserContext,
+        payload: AttendanceCheckRequest,
+        *,
+        allow_qr_method: bool,
+        auto_commit: bool,
+    ) -> AttendanceRecord:
         schedule = self._load_schedule(payload.work_schedule_id)
         self._ensure_schedule_access(current_user, schedule)
         if schedule.schedule_status not in {"PUBLISHED", "APPROVED"}:
@@ -206,13 +268,11 @@ class AttendanceService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Schedule belum dipublish untuk presensi.",
             )
-        if payload.method.startswith("gps") and (
-            payload.latitude is None or payload.longitude is None
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Latitude dan longitude wajib untuk metode GPS.",
-            )
+        method, selfie_valid = self._validate_method_and_selfie(
+            schedule=schedule,
+            payload=payload,
+            allow_qr_method=allow_qr_method,
+        )
         record = self.repository.get_by_schedule_id(schedule.id)
         if record is None or record.check_in_datetime is None:
             raise HTTPException(
@@ -238,19 +298,153 @@ class AttendanceService:
         record.check_out_latitude = payload.latitude
         record.check_out_longitude = payload.longitude
         record.check_out_photo_path = payload.photo_path
-        record.check_out_method = payload.method
+        record.check_out_method = method
         record.gps_valid_flag = record.gps_valid_flag or gps_flag
         record.geofence_valid_flag = record.geofence_valid_flag and geofence_flag
-        record.face_valid_flag = record.face_valid_flag or payload.photo_path is not None
+        record.face_valid_flag = record.face_valid_flag or selfie_valid
         record.working_minutes = working_minutes
         record.overtime_minutes = overtime_minutes
         record.attendance_status = "COMPLETED"
         if payload.remarks:
             record.remarks = payload.remarks
         record.updated_by = current_user.user.id
+        if auto_commit:
+            self.db.commit()
+            self.db.refresh(record)
+        return record
+
+    def check_in(self, current_user: CurrentUserContext, payload: AttendanceCheckRequest):
+        return self._process_check_in(
+            current_user,
+            payload,
+            allow_qr_method=False,
+            auto_commit=True,
+        )
+
+    def check_out(self, current_user: CurrentUserContext, payload: AttendanceCheckRequest):
+        return self._process_check_out(
+            current_user,
+            payload,
+            allow_qr_method=False,
+            auto_commit=True,
+        )
+
+    def create_qr_session(
+        self,
+        current_user: CurrentUserContext,
+        payload: AttendanceQrSessionCreateRequest,
+    ) -> tuple[AttendanceQrSession, str]:
+        schedule = self._load_schedule(payload.work_schedule_id)
+        self._ensure_schedule_access(current_user, schedule)
+        if schedule.schedule_status not in {"PUBLISHED", "APPROVED"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Schedule belum dipublish untuk QR attendance.",
+            )
+        attendance_action = payload.attendance_action.strip().upper()
+        if attendance_action not in {"CHECK_IN", "CHECK_OUT"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Attendance action hanya boleh CHECK_IN atau CHECK_OUT.",
+            )
+        qr_token = token_urlsafe(24)
+        item = AttendanceQrSession(
+            work_schedule_id=schedule.id,
+            attendance_action=attendance_action,
+            token_hash=hash_token(qr_token),
+            expires_at=utc_now() + timedelta(minutes=payload.expires_in_minutes),
+            remarks=payload.remarks,
+            created_by=current_user.user.id,
+            updated_by=current_user.user.id,
+        )
+        self.repository.create_qr_session(item)
+        self.db.commit()
+        self.db.refresh(item)
+        return item, qr_token
+
+    def _consume_qr_session(
+        self,
+        current_user: CurrentUserContext,
+        payload: AttendanceQrConsumeRequest,
+        *,
+        expected_action: str,
+    ) -> AttendanceRecord:
+        qr_token = payload.qr_token.strip()
+        if not qr_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="QR token wajib dikirim.",
+            )
+        qr_session = self.repository.get_qr_session_by_token_hash(hash_token(qr_token))
+        if qr_session is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="QR attendance session tidak ditemukan.",
+            )
+        if qr_session.attendance_action != expected_action:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="QR attendance action tidak sesuai.",
+            )
+        if qr_session.consumed_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="QR attendance session sudah digunakan.",
+            )
+        if self._as_utc(qr_session.expires_at) < utc_now():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="QR attendance session sudah kedaluwarsa.",
+            )
+
+        check_payload = AttendanceCheckRequest(
+            work_schedule_id=qr_session.work_schedule_id,
+            method="qr_selfie" if payload.photo_path else "qr",
+            photo_path=payload.photo_path,
+            remarks=payload.remarks,
+        )
+        if expected_action == "CHECK_IN":
+            record = self._process_check_in(
+                current_user,
+                check_payload,
+                allow_qr_method=True,
+                auto_commit=False,
+            )
+        else:
+            record = self._process_check_out(
+                current_user,
+                check_payload,
+                allow_qr_method=True,
+                auto_commit=False,
+            )
+        qr_session.consumed_at = utc_now()
+        qr_session.consumed_by = current_user.user.id
+        qr_session.updated_by = current_user.user.id
         self.db.commit()
         self.db.refresh(record)
         return record
+
+    def check_in_by_qr(
+        self,
+        current_user: CurrentUserContext,
+        payload: AttendanceQrConsumeRequest,
+    ) -> AttendanceRecord:
+        return self._consume_qr_session(
+            current_user,
+            payload,
+            expected_action="CHECK_IN",
+        )
+
+    def check_out_by_qr(
+        self,
+        current_user: CurrentUserContext,
+        payload: AttendanceQrConsumeRequest,
+    ) -> AttendanceRecord:
+        return self._consume_qr_session(
+            current_user,
+            payload,
+            expected_action="CHECK_OUT",
+        )
 
     def create_manual_adjustment(
         self,

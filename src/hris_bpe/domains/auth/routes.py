@@ -6,6 +6,7 @@ from hris_bpe.domains.auth.schemas import (
     ChangePasswordRequest,
     LoginRequest,
     RefreshTokenRequest,
+    UserPreferenceUpdateRequest,
 )
 from hris_bpe.domains.auth.service import AuthService
 
@@ -57,4 +58,17 @@ def change_password(
     return success_payload(
         "Password berhasil diperbarui.",
         data=service.change_password(current_user, payload).model_dump(mode="json"),
+    )
+
+
+@router.put("/preferences")
+def update_preferences(
+    payload: UserPreferenceUpdateRequest,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    service = AuthService(db)
+    return success_payload(
+        "Preferensi user berhasil diperbarui.",
+        data=service.update_preferences(current_user, payload).model_dump(mode="json"),
     )

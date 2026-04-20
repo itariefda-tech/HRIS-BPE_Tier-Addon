@@ -119,6 +119,11 @@
 - [x] tambah refresh token
 - [x] tambah revoke / logout token
 - [x] tambah audit trail untuk perubahan role dan scope
+- [x] tambahkan preferensi user untuk `preferred_language` (`id` / `en`)
+- [x] tambahkan preferensi user untuk `preferred_theme` (`theme_1` / `theme_2` / `theme_3` / `theme_4` / `theme_5`)
+- [x] tampilkan `preferred_language` dan `preferred_theme` pada response login
+- [x] tampilkan `preferred_language` dan `preferred_theme` pada endpoint `/api/v1/auth/me`
+- [x] siapkan endpoint update preferensi user (`preferred_language` + `preferred_theme`)
 
 ---
 
@@ -138,6 +143,9 @@
 - [x] migrasikan emergency contact dan employee documents
 - [x] tambahkan import batch employee
 - [x] tambahkan lifecycle employee yang lebih lengkap
+- [ ] tambahkan company setting untuk default language
+- [ ] tambahkan company setting untuk default theme
+- [ ] siapkan fallback: user preference > company default > system default
 
 ---
 
@@ -163,8 +171,8 @@
 - [x] tambahkan attendance manual adjustment
 - [x] tambah schedule publish workflow
 - [x] tambah attendance exception handling record
-- [ ] tambah selfie validation service
-- [ ] tambah QR attendance terpisah
+- [x] tambah selfie validation service
+- [x] tambah QR attendance terpisah
 
 ---
 
@@ -177,11 +185,11 @@
 - [x] hitung active deployment
 - [x] hitung work schedule hari ini
 - [x] hitung attendance hari ini
-- [ ] tambah reporting employee
-- [ ] tambah reporting deployment
-- [ ] tambah reporting schedule
-- [ ] tambah reporting attendance
-- [ ] siapkan endpoint dashboard yang aman untuk scoped supervisor
+- [x] tambah reporting employee
+- [x] tambah reporting deployment
+- [x] tambah reporting schedule
+- [x] tambah reporting attendance
+- [x] siapkan endpoint dashboard yang aman untuk scoped supervisor
 
 ---
 
@@ -259,6 +267,189 @@
 - [ ] siapkan demo flow end-to-end untuk pilot operasional
 
 ---
+
+# 🎨 PHASE 11.5 — UI-1 BASIC (DEMO & INTERNAL TEST READY)
+
+## 🎯 Tujuan
+Menjadikan HRIS Basic:
+> Sudah bisa dilihat, didemokan, dan diuji secara nyata oleh user internal (admin & guard)
+
+Fokus:
+- bukan UI sempurna
+- tapi UI yang cukup untuk validasi flow bisnis end-to-end
+- wajib baca dulu tech_stack.md
+---
+
+## 🧩 SCOPE UI YANG WAJIB ADA
+
+### 1. AUTH & BASE LAYOUT
+- [ ] halaman login (web admin)
+- [ ] simpan token & session
+- [ ] proteksi route (auth guard)
+- [ ] layout sidebar + header basic
+- [ ] tampilkan user profile sederhana
+
+## 🌐 CATATAN UI FOUNDATION
+- [ ] siapkan struktur i18n dasar agar UI Basic tidak hardcode text (`id` / `en`)
+- [ ] siapkan theme token dasar agar warna/layout tidak hardcode (`theme_1` / `theme_2` / `theme_3` / `theme_4` / `theme_5`)
+- [ ] belum wajib aktif 2 bahasa penuh pada phase ini
+- [ ] belum wajib aktif 5 tema penuh pada phase ini
+- [ ] target phase ini hanya menyiapkan pondasi agar tidak refactor besar saat masuk UI/UX phase berikutnya
+
+---
+
+### 2. DASHBOARD BASIC (WAJIB ADA)
+- [ ] total employee
+- [ ] total client
+- [ ] total site
+- [ ] active deployment
+- [ ] attendance hari ini
+- [ ] present / late / absent
+
+Endpoint:
+- `/api/v1/dashboard/ops-summary`
+
+---
+
+### 3. EMPLOYEE MANAGEMENT UI
+- [ ] halaman list employee
+- [ ] create employee
+- [ ] edit employee
+- [ ] detail employee
+- [ ] filter by branch / status / position
+
+---
+
+### 4. CLIENT, SITE & POST UI
+- [ ] list client
+- [ ] create/edit client
+- [ ] list contract
+- [ ] list site
+- [ ] create/edit site
+- [ ] site posts management
+
+---
+
+### 5. DEPLOYMENT UI (KRITIS)
+- [ ] list deployment
+- [ ] assign guard ke site
+- [ ] end deployment
+- [ ] filter by site/client/status
+
+---
+
+### 6. SCHEDULE UI (KRITIS)
+- [ ] list schedule (table)
+- [ ] generate schedule
+- [ ] publish schedule
+- [ ] filter by site/post/date
+- [ ] optional: calendar sederhana
+
+---
+
+### 7. ATTENDANCE MONITORING UI
+- [ ] list attendance
+- [ ] filter by date/site/status
+- [ ] detail attendance
+- [ ] tandai late / absent
+- [ ] tampilkan GPS flag sederhana
+
+---
+
+## 📱 MOBILE GUARD (MINIMAL VIABLE UI)
+
+### WAJIB ADA:
+- [ ] login
+- [ ] lihat jadwal (my schedules)
+- [ ] check-in
+- [ ] check-out
+- [ ] status hadir hari ini
+
+Endpoint:
+- `/my/schedules`
+- `/attendance/check-in`
+- `/attendance/check-out`
+
+---
+
+## 🔗 FLOW YANG HARUS BISA DIUJI
+
+- [ ] create employee
+- [ ] create client
+- [ ] create site & post
+- [ ] assign deployment
+- [ ] generate schedule
+- [ ] publish schedule
+- [ ] guard login mobile
+- [ ] guard check-in
+- [ ] guard check-out
+- [ ] admin lihat attendance di dashboard
+
+---
+
+## 🧪 QA MINIMAL
+
+- [ ] test login admin
+- [ ] test login guard
+- [ ] test create employee
+- [ ] test deployment muncul di schedule
+- [ ] test schedule muncul di mobile
+- [ ] test check-in masuk ke dashboard
+- [ ] test data konsisten
+
+---
+
+## 🚫 BELUM MASUK (PHASE PRO)
+
+- [ ] payroll UI
+- [ ] patrol UI
+- [ ] incident UI
+- [ ] billing UI
+- [ ] analytics
+
+---
+
+## 🧭 DEFINISI DONE — UI-1
+
+- [ ] semua modul Basic punya UI minimal
+- [ ] flow end-to-end berjalan tanpa error
+- [ ] mobile guard bisa check-in real
+- [ ] dashboard tampil data real
+- [ ] bisa simulasi 1 site operasional
+
+---
+
+# 🎨 PHASE 11.6 — UI FOUNDATION: I18N & THEME READINESS
+
+## 🎯 Tujuan
+Menyiapkan pondasi frontend agar dual bahasa dan multi tema bisa ditambahkan tanpa bongkar ulang struktur UI.
+
+## Scope
+- [ ] tentukan standar i18n frontend
+- [ ] pisahkan text UI ke translation files
+- [ ] siapkan struktur `id.json` dan `en.json`
+- [ ] siapkan naming key translation yang konsisten
+- [ ] siapkan theme tokens / CSS variables / design tokens
+- [ ] implementasikan theme system dasar (`theme_1` / `theme_2` / `theme_3` / `theme_4` / `theme_5`)
+- [ ] siapkan mekanisme persist preference theme dan language di frontend
+- [ ] sinkronkan preferensi user dari backend (`/api/v1/auth/login` dan `/api/v1/auth/me`) ke frontend session
+- [ ] implementasikan language switcher basic
+- [ ] implementasikan theme switcher basic
+
+## Definisi done
+- [ ] text utama UI tidak hardcode
+- [ ] bahasa bisa diganti minimal ID / EN
+- [ ] tema bisa diganti minimal via switcher
+- [ ] preference tersimpan dan terbaca saat login ulang
+
+---
+
+## 🔥 STRATEGI
+
+Basic Backend → Stabil  
+→ UI-1 (Demo & Test)  
+→ lanjut ke HRIS Pro
+
 
 ## Next
 

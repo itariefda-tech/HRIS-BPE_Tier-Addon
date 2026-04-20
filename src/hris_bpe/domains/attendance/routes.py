@@ -9,12 +9,24 @@ from hris_bpe.domains.attendance.schemas import (
     AttendanceExceptionResolveRequest,
     AttendanceManualAdjustmentCreateRequest,
     AttendanceManualAdjustmentRead,
+    AttendanceQrConsumeRequest,
+    AttendanceQrSessionCreateRequest,
+    AttendanceQrSessionIssuedRead,
+    AttendanceQrSessionRead,
     AttendanceRead,
 )
 from hris_bpe.domains.attendance.service import AttendanceService
 
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
+
+
+def _ensure_attendance_write_access(current_user: CurrentUser) -> None:
+    if "attendance.self_service" not in current_user.permission_codes and "attendance.manage" not in current_user.permission_codes:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Izin attendance tidak cukup.",
+        )
 
 
 @router.get("/records")
@@ -36,11 +48,7 @@ def check_in(
     db: DbSession,
     current_user: CurrentUser,
 ):
-    if "attendance.self_service" not in current_user.permission_codes and "attendance.manage" not in current_user.permission_codes:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Izin attendance tidak cukup.",
-        )
+    _ensure_attendance_write_access(current_user)
     service = AttendanceService(db)
     item = service.check_in(current_user, payload)
     return success_payload("Check-in berhasil dicatat.", data=AttendanceRead.model_validate(item).model_dump(mode="json"))
@@ -52,14 +60,59 @@ def check_out(
     db: DbSession,
     current_user: CurrentUser,
 ):
-    if "attendance.self_service" not in current_user.permission_codes and "attendance.manage" not in current_user.permission_codes:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Izin attendance tidak cukup.",
-        )
+    _ensure_attendance_write_access(current_user)
     service = AttendanceService(db)
     item = service.check_out(current_user, payload)
     return success_payload("Check-out berhasil dicatat.", data=AttendanceRead.model_validate(item).model_dump(mode="json"))
+
+
+@router.post("/qr-sessions")
+def create_qr_session(
+    payload: AttendanceQrSessionCreateRequest,
+    db: DbSession,
+    current_user=Depends(require_permissions("attendance.manage")),
+):
+    service = AttendanceService(db)
+    item, qr_token = service.create_qr_session(current_user, payload)
+    session_payload = AttendanceQrSessionRead.model_validate(item).model_dump(mode="json")
+    response_payload = AttendanceQrSessionIssuedRead(
+        **session_payload,
+        qr_token=qr_token,
+    )
+    return success_payload(
+        "QR attendance session berhasil dibuat.",
+        data=response_payload.model_dump(mode="json"),
+    )
+
+
+@router.post("/check-in/qr")
+def check_in_by_qr(
+    payload: AttendanceQrConsumeRequest,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    _ensure_attendance_write_access(current_user)
+    service = AttendanceService(db)
+    item = service.check_in_by_qr(current_user, payload)
+    return success_payload(
+        "Check-in QR berhasil dicatat.",
+        data=AttendanceRead.model_validate(item).model_dump(mode="json"),
+    )
+
+
+@router.post("/check-out/qr")
+def check_out_by_qr(
+    payload: AttendanceQrConsumeRequest,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    _ensure_attendance_write_access(current_user)
+    service = AttendanceService(db)
+    item = service.check_out_by_qr(current_user, payload)
+    return success_payload(
+        "Check-out QR berhasil dicatat.",
+        data=AttendanceRead.model_validate(item).model_dump(mode="json"),
+    )
 
 
 @router.get("/manual-adjustments")
@@ -98,11 +151,7 @@ def create_exception(
     db: DbSession,
     current_user: CurrentUser,
 ):
-    if "attendance.self_service" not in current_user.permission_codes and "attendance.manage" not in current_user.permission_codes:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Izin attendance tidak cukup.",
-        )
+    _ensure_attendance_write_access(current_user)
     service = AttendanceService(db)
     item = service.create_exception(current_user, payload)
     return success_payload(

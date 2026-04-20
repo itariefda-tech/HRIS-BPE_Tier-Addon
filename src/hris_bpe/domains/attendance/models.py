@@ -101,3 +101,25 @@ class AttendanceException(Base, PrimaryKeyMixin, TimestampMixin, AuditActorMixin
     resolution_status: Mapped[str] = mapped_column(String(40), default="OPEN", index=True)
     resolved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AttendanceQrSession(Base, PrimaryKeyMixin, TimestampMixin, AuditActorMixin, VersionedMixin):
+    __tablename__ = "attendance_qr_sessions"
+    __table_args__ = (
+        UniqueConstraint("token_hash"),
+        Index(
+            "ix_attendance_qr_sessions_schedule_action_status",
+            "work_schedule_id",
+            "attendance_action",
+            "consumed_at",
+            "expires_at",
+        ),
+    )
+
+    work_schedule_id: Mapped[int] = mapped_column(ForeignKey("work_schedules.id"), index=True)
+    attendance_action: Mapped[str] = mapped_column(String(20), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    remarks: Mapped[str | None] = mapped_column(Text(), nullable=True)

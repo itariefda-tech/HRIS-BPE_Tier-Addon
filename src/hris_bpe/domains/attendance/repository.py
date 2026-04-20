@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from hris_bpe.domains.attendance.models import (
     AttendanceException,
     AttendanceManualAdjustment,
+    AttendanceQrSession,
     AttendanceRecord,
 )
 
@@ -64,3 +65,13 @@ class AttendanceRepository:
 
     def get_exception(self, exception_id: int) -> AttendanceException | None:
         return self.db.get(AttendanceException, exception_id)
+
+    def create_qr_session(self, item: AttendanceQrSession) -> AttendanceQrSession:
+        self.db.add(item)
+        self.db.flush()
+        return item
+
+    def get_qr_session_by_token_hash(self, token_hash: str) -> AttendanceQrSession | None:
+        return self.db.execute(
+            select(AttendanceQrSession).where(AttendanceQrSession.token_hash == token_hash)
+        ).scalar_one_or_none()
